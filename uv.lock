@@ -21,6 +21,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "torch" },
     { name = "torchvision" },
 ]
@@ -33,6 +34,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "pyyaml", specifier = ">=6.0.4" },
     { name = "scikit-learn", specifier = ">=1.9.1" },
+    { name = "scipy", specifier = ">=1.18.1" },
     { name = "torch", specifier = ">=2.15.0" },
     { name = "torchvision", specifier = ">=0.29.2" },
 ]
