@@ -8,7 +8,13 @@ Fruit-grading cameras normally need thousands of hand-labelled photos. This proj
 
 ## Results
 
-No results yet. Every number here will come from a logged run in `results/experiments.csv`.
+Every number here comes from a logged run in `results/experiments.csv`. Accuracy is on the real test set (1,350 images, 450 per grade).
+
+| Run | Trained on | Val acc | Real test acc |
+|---|---|---|---|
+| real_lrb1e-4 | real | 0.9993 | 0.9985 |
+
+The real baseline is an upper bound, not a fair target: the same physical fruit appears across splits (see Limitations). The only errors were 2 fresh oranges predicted as defective. Grad-CAM heatmaps (`results/real_lrb1e-4_gradcam.png`) sit on the fruit rather than the background.
 
 ## Limitations
 
