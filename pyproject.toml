@@ -1,0 +1,19 @@
+[project]
+name = "citrus-sim2real-grading"
+version = "0.1.0"
+description = "Orange grading CNN and a sim-to-real test with Blender renders"
+readme = "README.md"
+authors = [
+    { name = "Perfect-Human007", email = "junaeidshoaib@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "imagehash>=4.3.2",
+    "matplotlib>=3.11.2",
+    "pandas>=3.1.1",
+    "pillow>=13.0.0",
+    "pyyaml>=6.0.4",
+    "scikit-learn>=1.9.1",
+    "torch>=2.15.0",
+    "torchvision>=0.29.2",
+]

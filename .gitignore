@@ -1,0 +1,22 @@
+# Data is downloaded or rendered locally, never committed
+data/
+
+# Model checkpoints are large and reproducible from a logged run
+checkpoints/
+*.pt
+*.pth
+
+# Environment and OS clutter
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local editor settings
+.claude/
+
+# Private interview prep, kept local
+docs/interview_notes.md
+
+# Local assistant instructions, kept out of the public repo
+CLAUDE.md
