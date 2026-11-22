@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, classification_report
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 from torch.utils.data import DataLoader
 
 from dataset import GRADES, IMAGENET_MEAN, IMAGENET_STD, OrangeDataset, eval_transform
@@ -54,8 +54,10 @@ def grad_cam(model, image, target_class):
 
 def save_gradcam_grid(model, predictions, device, seed, out_path, max_errors=4):
     # 2 random images per grade, plus misclassified ones because errors show what the model relies on
-    samples = pd.concat([predictions[predictions["true"] == g].sample(2, random_state=seed) for g in GRADES]
+    per_grade = [predictions[predictions["true"] == g] for g in GRADES]
+    samples = pd.concat([rows.sample(min(2, len(rows)), random_state=seed) for rows in per_grade]
                         + [predictions[predictions["true"] != predictions["pred"]].head(max_errors)])
+    samples = samples[~samples.index.duplicated()]  # an error may also have been drawn at random
     transform = eval_transform()
     mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
     std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
@@ -65,16 +67,15 @@ def save_gradcam_grid(model, predictions, device, seed, out_path, max_errors=4):
         ax.axis("off")
     for ax, (_, row) in zip(axes.T.flat, samples.iterrows()):
         image = transform(Image.open(row["path"]).convert("RGB"))
-        with torch.no_grad():
-            pred = model(image.unsqueeze(0).to(device)).argmax(1).item()
-        cam = grad_cam(model, image.to(device), pred)
+        # Explain the logged prediction, not a fresh single-image one, so titles match the predictions CSV
+        cam = grad_cam(model, image.to(device), GRADES.index(row["pred"]))
         ax.imshow((image * std + mean).clamp(0, 1).permute(1, 2, 0))
         ax.imshow(cam, cmap="jet", alpha=0.4)
-        error = " (error)" if row["true"] != GRADES[pred] else ""
-        ax.set_title(f"{row['true']} / {GRADES[pred]}{error}", fontsize=10)
+        error = " (error)" if row["true"] != row["pred"] else ""
+        ax.set_title(f"{row['true']} / {row['pred']}{error}", fontsize=10)
     fig.suptitle("Grad-CAM (true / predicted)")
     fig.tight_layout()
-    fig.savefig(out_path, dpi=80)
+    fig.savefig(out_path, dpi=64)  # keeps the tracked PNG small
     plt.close(fig)
 
 
@@ -101,9 +102,12 @@ def main():
     model.load_state_dict(checkpoint["model_state"])
     model.to(device)
 
-    test_acc = write_test_outputs(model, args.test_csv, run_id, device, args.seed)
+    predictions = predict_test(model, args.test_csv, device)
+    test_acc = (predictions["true"] == predictions["pred"]).mean()
+    print(f"Test accuracy: {test_acc:.4f} on {len(predictions)} images")
 
-    # Written last, so a crash above never leaves a half-finished row
+    # Logged straight after scoring, before any plotting, so a later crash still counts as evaluated
+    # and the guard above blocks a second look at the test set
     row = {
         "run_id": run_id,
         "date": date.today().isoformat(),
@@ -120,19 +124,23 @@ def main():
     pd.DataFrame([row])[logged.columns].to_csv(EXPERIMENTS_CSV, mode="a", header=False, index=False)
     print(f"Logged {run_id} to {EXPERIMENTS_CSV}")
 
+    write_test_outputs(model, predictions, run_id, device, args.seed)
 
-def write_test_outputs(model, test_csv, run_id, device, seed):
-    """Metrics, per-image predictions, confusion matrix and Grad-CAM. Returns test accuracy."""
+
+def predict_test(model, test_csv, device):
+    """Per-image predictions on the test set as a table of path, source_class, true and pred grades."""
     test_df = pd.read_csv(test_csv)
     loader = DataLoader(OrangeDataset(test_csv, eval_transform()), batch_size=64)
     labels, preds = predict(model, loader, device)
-    test_acc = accuracy_score(labels, preds)
-    print(f"Test accuracy: {test_acc:.4f} on {len(labels)} images")
-    print(classification_report(labels, preds, labels=range(len(GRADES)), target_names=GRADES, digits=4))
+    return pd.DataFrame({"path": test_df["path"], "source_class": test_df["source_class"],
+                         "true": [GRADES[i] for i in labels], "pred": [GRADES[i] for i in preds]})
+
+
+def write_test_outputs(model, predictions, run_id, device, seed):
+    """Per-class report, predictions CSV, per-source_class accuracy, confusion matrix and Grad-CAM."""
+    print(classification_report(predictions["true"], predictions["pred"], labels=GRADES, digits=4))
 
     # Per-image predictions so errors can be inspected later without re-running the test set
-    predictions = pd.DataFrame({"path": test_df["path"], "source_class": test_df["source_class"],
-                                "true": [GRADES[i] for i in labels], "pred": [GRADES[i] for i in preds]})
     predictions_path = Path("results") / f"{run_id}_test_predictions.csv"
     predictions.to_csv(predictions_path, index=False)
     print(f"Saved {predictions_path}")
@@ -141,8 +149,8 @@ def write_test_outputs(model, test_csv, run_id, device, seed):
     print(correct.groupby(predictions["source_class"]).mean().round(4).to_string())
 
     confusion_path = Path("results") / f"{run_id}_confusion.png"
-    disp = ConfusionMatrixDisplay.from_predictions(labels, preds, labels=range(len(GRADES)),
-                                                   display_labels=GRADES, cmap="Blues", colorbar=False)
+    disp = ConfusionMatrixDisplay.from_predictions(predictions["true"], predictions["pred"], labels=GRADES,
+                                                   cmap="Blues", colorbar=False)
     disp.ax_.set_title(f"{run_id} test confusion matrix")
     disp.figure_.tight_layout()
     disp.figure_.savefig(confusion_path, dpi=80)
@@ -152,7 +160,6 @@ def write_test_outputs(model, test_csv, run_id, device, seed):
     gradcam_path = Path("results") / f"{run_id}_gradcam.png"
     save_gradcam_grid(model, predictions, device, seed, gradcam_path)
     print(f"Saved {gradcam_path}")
-    return test_acc
 
 
 if __name__ == "__main__":
