@@ -14,6 +14,7 @@ No results yet. Every number here will come from a logged run in `results/experi
 
 - Blender rigid-body physics is used only for natural resting poses. It is not DEM and does not model fruit-to-fruit contact or bulk flow.
 - The sorting loop in Stage 4 is a simulation of a robot interface, not robot code.
+- The real-data baseline is an upper bound. The split groups augmented copies of the same photo together, but the dataset also contains the same physical orange photographed several times, and those photos can land in different splits. Spot checks found val images whose closest train image is clearly the same fruit. So the real baseline partly measures recognising seen fruit, and the sim-to-real gap is likely overstated. Testing on an independent orange dataset would give an honest number and is left as future work.
 
 ## Data
 
