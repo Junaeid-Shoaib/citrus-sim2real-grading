@@ -89,12 +89,23 @@ A `sample_params(grade, rng, cfg)` function returns a dict of numbers. A `apply_
 Defect types (one per defective image, chosen evenly):
 - **spots:** 3 to 30 small dark brown or black spots from a thresholded Voronoi texture, plus a darker bump in the spot. Matches blackspotted.
 - **lesions:** fewer, larger brown or grey patches with a yellow halo ring. Matches cankered.
-- **rot:** one or two large patches. Inside: brown, very rough, sunken via bump, with whitish or blue-green mould noise on top. Matches rotten.
+- **rot:** one or two patches, matched to the real rotten train images.
+  - Soft, irregular edge distorted by low-frequency noise.
+  - Inside: dark-brown to olive-brown, matte, sunken.
+  - A slightly sunken, darker, glossier water-soaked rim just outside the patch.
+  - Optional mould that grows out from the patch centre: white at its margin, muted grey-green toward the middle. With mould_amount 0 there is no mould, which is the most common look in the real images.
 
 Global shift for every defective image, sampled not fixed:
-- Lower saturation (duller).
-- Hue nudged toward brown.
+- Lower saturation (duller): saturation x (1 - shift_dull).
+- Hue nudged toward brown, and darker, because brown is a dark orange: hue moves shift_brown of the way to 0.07, value x (1 - 2 x shift_brown). Desaturating alone gave pastel peach.
 - Higher roughness (less shine).
+
+Caps: shift_brown <= 0.15 and shift_dull <= 0.2, enforced by asserts in generate.py.
+- Why: at 0.4 and 0.3 a greenish base rendered beige. That would make "beige means defective" a shortcut and undo D5.
+- Checked at the caps on fruit pixels:
+  - green base hue 0.20 renders at 65 degrees, saturation 0.50 (olive);
+  - worst case hue 0.16 renders at 52 degrees, saturation 0.50 (olive-yellow, not beige);
+  - orange renders as dull brown-orange.
 
 Each shift is sampled from a range that starts at 0, so some defective fruit has no global shift and is defective only because of its local defect. That stops the model from relying on overall dullness alone.
 
@@ -104,7 +115,9 @@ Stage 1 Grad-CAM showed the real model uses broad peel cues, so local spots alon
 - spots: no centre; the spot texture is masked to the camera-facing cap (within about 60 degrees of the view direction), so spots spread across the visible face like real blackspot.
 - lesions and rot: each patch has its own centre, up to 3.
 
-All three defect types live in one material, switched by mix factors, so changing type does not recompile shaders. The material has 3 fixed centre slots; unused slots get radius 0.
+All three defect types live in one material, switched by mix factors, so changing type does not recompile shaders. The material has 3 fixed centre slots.
+- An unused slot has its centre at the fruit's centre and radius 0.01. Every surface point is then 1.0 from it, and its furthest reach (1.4 x 0.01 plus at most 0.125 edge wobble) stays far below 1.0, so it can never show. An assert at the top of generate.py checks this.
+- Used patches have radius at most 0.7 (chord length, about 41 degrees), so a patch stays a local defect. generate.py asserts this, and the 2.4 sampler must draw radii within it.
 
 The defect type is saved in labels.csv. The label stays the 3-class grade.
 
@@ -128,6 +141,10 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 Fruit rotation is random in both settings because a fixed pose would make the narrow set unrealistically easy to tell apart.
 
 Resting pose: see D3.
+
+**Notes from Step 2.2 for the ranges:**
+- **Mould frequency:** in 12 real rotten train images, only 2 showed mould, and those had heavy mould; the rest had a bare sunken patch. The sampler should give most rot images mould_amount 0, and the rest a high amount, rather than spreading mould_amount evenly across all rot.
+- **Salmon tint:** shifted orange fruit in the Step 2.2 sheet rendered salmon (for example rot_a: peel about sRGB 0.82, 0.53, 0.34). That came from the hand-picked base values (hue 0.075, saturation 0.9, value 0.9). Set the orange hue, saturation and value ranges by comparing with the real train hue/saturation histograms (Step 2.4), so shifted fruit reads dull orange, not salmon.
 
 **Confound note.** Narrow and wide now differ only in how wide each range is, so Step 3.2 measures the effect of spread. But the narrow background was chosen from the real train sample (section 2), so narrow is already matched to how the real photos look. A narrow-vs-wide gap therefore shows what extra spread adds on top of a scene already matched to the real data, not what matching the background is worth. It also means narrow is not a model of a real belt camera.
 
