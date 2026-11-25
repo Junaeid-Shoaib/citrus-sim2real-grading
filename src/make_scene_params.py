@@ -1,7 +1,9 @@
-"""Sample render parameters for synthetic oranges and write labels.csv plus train/val splits.
+"""Sample render parameters for synthetic oranges and write labels.csv.
 
 All randomness for the synthetic data lives here (D1). blender/generate.py only turns a
 parameter row into an image, so each image's grade is fixed before it is rendered.
+The train/val split comes later (src/split_synthetic.py), once the images exist for the
+duplicate check.
 
     uv run python src/make_scene_params.py --randomisation wide --n-per-grade 1000
 """
@@ -15,7 +17,6 @@ from pathlib import Path
 
 import pandas as pd
 import yaml
-from sklearn.model_selection import train_test_split
 
 GRADES = ["fresh", "green", "defective"]
 # Stored as JSON text in labels.csv because they are lists or tuples
@@ -188,19 +189,16 @@ def main():
 
     cfg = load_config(args.config, args.randomisation)
     out_dir = Path(args.out_dir or f"data/synthetic/{cfg['randomisation']}")
+    # generate.py and camera_process.py skip files that exist, so new labels over old images would
+    # silently pair new parameters with images rendered from old ones
+    if any(out_dir.glob("**/*.jpg")):
+        raise SystemExit(f"{out_dir} already holds images; use a new --out-dir")
     labels = make_labels(cfg, args.n_per_grade, args.seed, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     labels.to_csv(out_dir / "labels.csv", index=False)
 
-    # 85/15 train/val, stratified by grade. No synthetic test split: the test set is always real.
-    train, val = train_test_split(labels, test_size=0.15, stratify=labels["grade"], random_state=args.seed)
-    (out_dir / "splits").mkdir(exist_ok=True)
-    for name, split in (("train", train), ("val", val)):
-        split[["path", "grade", "defect_type"]].to_csv(out_dir / "splits" / f"{name}.csv", index=False)
-
     print(f"Wrote {len(labels)} rows to {out_dir / 'labels.csv'}")
     print(pd.crosstab(labels["grade"], labels["defect_type"]).to_string())
-    print(f"Splits: train {len(train)}, val {len(val)}")
 
 
 if __name__ == "__main__":

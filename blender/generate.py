@@ -367,7 +367,7 @@ def make_peel_material():
 
     # Height: oil-gland pits, plus raised rough canker marks and sunken black spots and rot
     pits = named(nodes, "ShaderNodeTexVoronoi", "pits")
-    links.new(coords, pits.inputs["Vector"])
+    links.new(shifted, pits.inputs["Vector"])
     corky_relief = math_op(nodes, links, "ADD", 0.5, cork_noise.outputs["Fac"])
     height = math_op(nodes, links, "ADD", pits.outputs["Distance"],
                      math_op(nodes, links, "MULTIPLY", canker, corky_relief))
@@ -663,9 +663,13 @@ def apply_peel(fruit, camera, params):
 
 
 def render(scene, out_path):
-    scene.render.filepath = out_path
+    # Write under a temporary name and rename when done, so an interrupted run never leaves a
+    # truncated JPEG that the resume check would count as finished
+    part_path = out_path[:-len(".jpg")] + ".part.jpg"
+    scene.render.filepath = part_path
     start = time.time()
     bpy.ops.render.render(write_still=True)
+    os.replace(part_path, out_path)
     return time.time() - start
 
 

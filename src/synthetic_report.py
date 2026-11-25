@@ -2,6 +2,8 @@
 
 Writes three figures: a 16-image sample grid, a real-vs-synthetic grid per grade, and
 hue/saturation histograms per grade. Uses the real TRAIN split only, never val or test.
+Run it on a finished batch: the grids sample 16 images and 8 per grade, so it fails while
+a grade has too few images.
 
     uv run python src/synthetic_report.py --synthetic-dir data/synthetic/wide
 """
@@ -86,8 +88,12 @@ def hue_sat_histograms(real, synth, out_path, n_images, seed):
         real_paths = real[real.grade == grade].sample(min(n_images, (real.grade == grade).sum()), random_state=seed).path
         neutral = synth[(synth.grade == grade) & synth.bg_type.isin(NEUTRAL_BACKGROUNDS)]
         synth_paths = neutral.sample(min(n_images, len(neutral)), random_state=seed).path
-        real_images = [fruit_hsv(p) for p in real_paths]
-        synth_images = [fruit_hsv(p) for p in synth_paths]
+        # An image with no pixel above the saturation mask has no median; one such image would turn
+        # the percentiles into NaN and the coverage into 0%, so drop it and report how many
+        real_all = [fruit_hsv(p) for p in real_paths]
+        synth_all = [fruit_hsv(p) for p in synth_paths]
+        real_images = [px for px in real_all if len(px)]
+        synth_images = [px for px in synth_all if len(px)]
         real_px, synth_px = np.concatenate(real_images), np.concatenate(synth_images)
         covered, low, high = coverage(real_images, synth_images)
         for r, (name, channel) in enumerate((("hue", 0), ("saturation", 1))):
@@ -97,6 +103,7 @@ def hue_sat_histograms(real, synth, out_path, n_images, seed):
             ax.set_title(f"{grade}: {name}")
             ax.legend(fontsize=7)
         summary.append({"grade": grade, "real images": len(real_paths), "synthetic images": len(synth_paths),
+                        "dropped (no fruit pixels)": len(real_all) - len(real_images) + len(synth_all) - len(synth_images),
                         "real hue": np.median(real_px[:, 0]), "synthetic hue": np.median(synth_px[:, 0]),
                         "real sat": np.median(real_px[:, 1]), "synthetic sat": np.median(synth_px[:, 1]),
                         "real value": np.median(real_px[:, 2]), "synthetic value": np.median(synth_px[:, 2]),
