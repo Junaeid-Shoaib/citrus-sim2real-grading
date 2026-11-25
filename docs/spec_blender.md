@@ -105,7 +105,7 @@ Global shift for every defective image, sampled not fixed:
 
 Why: real defective train fruit compared with fresh (median of per-image medians) is 0.64x (blackspot), 0.65x (canker) and 0.76x (rot) as bright, 0.89 to 0.97x as saturated, and not browner in hue. Canker is yellower (hue 0.110 vs 0.082); that comes from canker's own base hue range, not from the shift. An earlier version pulled hue toward brown, which the data contradicts.
 
-Caps: shift_dark <= 0.65 and shift_dull <= 0.12, enforced by asserts in generate.py. Dulling stays small because desaturating a light greenish base turns it beige, which would make "beige means defective" a shortcut. Darkening keeps a greenish base olive.
+Caps: shift_dark <= 0.65 and shift_dull <= 0.05, enforced by asserts in generate.py. (The dull cap was 0.12 until the third wide pilot showed synthetic defective/fresh saturation of 0.84 against real 0.89 to 0.97; the dark cap gave a value ratio of 0.67, matching real.) Dulling stays small because desaturating a light greenish base turns it beige, which would make "beige means defective" a shortcut. Darkening keeps a greenish base olive.
 
 Each shift is sampled from a range that starts at 0, so some defective fruit has no global shift and is defective only because of its local defect. That stops the model from relying on overall dullness alone.
 
@@ -131,9 +131,10 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 | Peel bump strength, pit scale | fixed | range |
 | Squash (z-scale), lumpiness | small range | larger range |
 | Defect size, count | middle of range | full range |
-| Light intensity | fixed | 0.5x to 2x |
+| Light intensity | fixed | 0.8x to 1.25x |
 | Light colour temperature | 5500 K | 3500 to 7500 K |
-| Light position | fixed | random on a hemisphere above |
+| Light position | fixed | random on a hemisphere above, within 70 degrees of the camera direction (never backlit) |
+| Fill light | none | weak neutral-white light at the camera, 0.25 of the key's light on the fruit |
 | Camera | top-down, fixed distance | tilt 0 to 60 degrees, distance so fruit fills 55 to 100% of the frame, small off-centre shift |
 | Fruit rotation | random (free, costs nothing) | random |
 | Background | light surface only: plain white to light grey, small brightness range, no texture | dark belt, white, light grey, beige, procedural speckle or noise textures, random colour |
@@ -141,6 +142,12 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 Fruit rotation is random in both settings because a fixed pose would make the narrow set unrealistically easy to tell apart.
 
 Resting pose: see D3.
+
+**Lighting decisions from the Step 2.4 wide pilots:**
+- **Key light within 70 degrees of the camera direction.** With light and camera azimuth drawn independently, the key light was often behind the fruit from the camera's view and the visible face was in shadow. Wide renders came out at about 0.7x the real brightness for every grade. The real photos are lit from the camera side. The sampler draws the camera first, then redraws the key light direction until it is within 70 degrees.
+- **Weak white fill light at the camera (wide only, fill_ratio 0.25).** It lifts the shadowed side. It is a white light rather than more grey ambient, because grey ambient washed out saturation (Step 2.3). Its power is scaled by the squared distance ratio, so fill_ratio is a ratio of light on the fruit whatever the camera distance. Narrow keeps fill_ratio 0 so its colour calibration stays valid.
+- **Light strength 0.8 to 1.25x (320 to 500 W).** Narrowing strength alone did not fix the darkness; it was the geometry. Exposure was not normalised on fruit pixels, because that would erase the real brightness difference between green and fresh fruit.
+- Pilot 3 result: green value 0.41 vs real 0.42; fresh 0.69 vs 0.86 and defective 0.46 vs 0.58, both up from pilot 2.
 
 **Decisions from Step 2.3 renders:**
 - **Green hue:** wide green material hue is 0.145 to 0.205. At 0.14 the floor rendered at hue 0.133, below the real 5th percentile (0.137).
@@ -271,3 +278,5 @@ CLAUDE.md says to check for near-duplicates before training.
 - No physically measured peel materials (listed as next steps in 3.4).
 
 **Note for Stage 3:** each Stage 3 run must state whether its checkpoint was chosen on synthetic val or real val, and write it in the experiments.csv `notes` column. Choosing on real val uses real labels, so it is not "synthetic only" in the strict sense, and the result must be read that way.
+
+**Note for Stage 3 (from the Step 2.4 pilot):** real photos contain very saturated pixels (0.9 to 1.0) that the renders do not produce, probably from the phone camera's colour processing. Use mild colour jitter on synthetic training images (saturation and contrast, no hue) to cover that range.

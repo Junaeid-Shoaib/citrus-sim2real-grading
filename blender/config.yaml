@@ -20,9 +20,10 @@ shared:
   # Real defective train fruit vs fresh (median of per-image medians): value x0.64 (blackspot),
   # x0.65 (canker), x0.76 (rot); saturation x0.89-0.97; hue not browner. So the shift darkens
   # and slightly dulls. Ranges start at 0 so some defective fruit has no shift; the means
-  # (dark 0.33, dull 0.06) give value ~x0.68 and saturation ~x0.94. Caps asserted in generate.py.
+  # give value ~x0.68 (wide pilot: 0.67, matching real) and only light dulling: a 0.12 dull cap gave
+  # synthetic defective/fresh saturation 0.84 against real 0.89-0.97. Caps asserted in generate.py.
   shift_dark: [0.0, 0.65]
-  shift_dull: [0.0, 0.12]
+  shift_dull: [0.0, 0.05]
   shift_rough: [0.0, 0.3]
   patch_degrees_from_view: [0, 60]         # defect centres stay on the visible face
   # 2 of 12 real rotten train images showed mould, both heavy; the rest a bare patch
@@ -62,6 +63,8 @@ narrow:
     azimuth: 315
     distance: 6.6
     temperature: 6500                     # neutral: the real photos are white-balanced
+    max_angle_from_camera: 70              # key light never behind the fruit
+    fill_ratio: 0.0                        # no fill: keeps the narrow colour calibration
   camera:
     tilt: 0                                # straight down
     azimuth: 0
@@ -78,7 +81,7 @@ wide:
   grades:
     fresh:     {hue: [0.082, 0.109], saturation: [0.86, 1.0], value: [0.52, 0.92],
                 blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
-    green:     {hue: [0.145, 0.205], saturation: [0.9, 1.0], value: [0.34, 0.45],
+    green:     {hue: [0.145, 0.22], saturation: [0.9, 1.0], value: [0.34, 0.45],
                 blotch_hue_offset: [-0.07, -0.03], blotch_amount: [0.0, 0.6]}
     defective:
       spots:   {hue: [0.089, 0.129], saturation: [0.86, 1.0], value: [0.42, 0.82],
@@ -101,11 +104,13 @@ wide:
              density: [0.3, 1.0]}   # share of the face where marks cluster; varies per image
     rot:     {count: [1, 2], radius: [0.25, 0.6], wrinkle: [0.0, 0.3]}   # generate.py asserts radius <= 0.7
   light:
-    energy: [200, 800]
+    energy: [320, 500]                     # 0.8-1.25x narrow: the real photos look auto-exposed, so brightness varies little
     elevation: [30, 80]
     azimuth: [0, 360]
     distance: 6.6
     temperature: [4500, 8500]             # centred on neutral 6500 K; models white-balance error
+    max_angle_from_camera: 70              # front to side lighting, never backlit
+    fill_ratio: 0.25                       # weak white fill from the camera, as a fraction of the key's light on the fruit
   camera:
     tilt: [0, 60]
     azimuth: [0, 360]

@@ -59,6 +59,7 @@ DEFAULT_PARAMS = {
     "light_energy": 400.0,    # watts
     "light_location": (2.0, -2.0, 6.0),
     "light_temperature": 6500.0,  # kelvin; 6500 is close to neutral white
+    "fill_ratio": 0.0,        # white fill light at the camera, as a fraction of the key light on the fruit
     "fill": 0.7,              # fraction of the image width the fruit covers
     "camera_tilt": 0.0,       # degrees from straight down
     "camera_azimuth": 0.0,    # degrees around the fruit
@@ -88,7 +89,7 @@ MOULD_BLUE_GREEN = (0.40, 0.48, 0.42)     # muted grey-green spore centre (darke
 # 0.89-0.97x as saturated, with no shift toward brown, so the shift darkens and slightly dulls.
 # Keeping dulling small stops a greenish base turning beige ("beige means defective" shortcut, D5).
 MAX_SHIFT_DARK = 0.65
-MAX_SHIFT_DULL = 0.12
+MAX_SHIFT_DULL = 0.05   # 0.12 gave synthetic defective/fresh saturation 0.84 in the wide pilot; real is 0.89-0.97
 
 DEFECT_TYPES = ["spots", "lesions", "rot"]   # blackspot, canker, rot
 MAX_PATCHES = 3  # fixed number of rot patch slots, so the shader layout never changes
@@ -500,6 +501,14 @@ def build_scene():
     light.name = "light"
     light.data.size = 3.0
 
+    # Weak fill from the camera position: large and neutral white, so it lifts shadows without
+    # the greying a stronger grey ambient caused
+    bpy.ops.object.light_add(type="AREA")
+    fill_light = bpy.context.object
+    fill_light.name = "fill_light"
+    fill_light.data.size = 4.0
+    fill_light.data.color = (1.0, 1.0, 1.0)
+
     bpy.ops.object.camera_add()
     camera = bpy.context.object
     camera.data.lens = 50
@@ -539,6 +548,14 @@ def apply_params(scene, params):
                                                           math.cos(tilt)))
     look_at(camera, fruit.location)
     camera.data.shift_x, camera.data.shift_y = params["camera_shift"]
+
+    # Fill light sits at the camera. Light on the fruit falls with distance squared, so scale its
+    # power by (camera distance / key distance)^2 to make fill_ratio a ratio of light on the fruit.
+    fill_light = bpy.data.objects["fill_light"]
+    key_distance = (light.location - fruit.location).length
+    fill_light.data.energy = params["fill_ratio"] * params["light_energy"] * (distance / key_distance) ** 2
+    fill_light.location = camera.location
+    look_at(fill_light, fruit.location)
 
     apply_background(params)
     # The peel needs the final camera position to place defects on the visible side

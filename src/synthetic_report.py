@@ -29,8 +29,17 @@ def fruit_hsv(path):
     return hsv[hsv[:, 1] > FRUIT_SATURATION]
 
 
-def pooled_pixels(paths):
-    return np.concatenate([fruit_hsv(p) for p in paths])
+def coverage(real_pixels, synth_pixels):
+    """% of real images whose median hue/sat/value lies inside the synthetic 5th-95th percentile.
+
+    Answers "does the synthetic set span the real images?" per channel, which a match of
+    medians alone does not.
+    """
+    real_medians = np.array([np.median(px, axis=0) for px in real_pixels])
+    synth_medians = np.array([np.median(px, axis=0) for px in synth_pixels])
+    low, high = np.percentile(synth_medians, [5, 95], axis=0)
+    inside = (real_medians >= low) & (real_medians <= high)
+    return 100 * inside.mean(axis=0), low, high
 
 
 def image_grid(rows, out_path, title_size=8):
@@ -76,7 +85,10 @@ def hue_sat_histograms(real, synth, out_path, n_images, seed):
         real_paths = real[real.grade == grade].sample(min(n_images, (real.grade == grade).sum()), random_state=seed).path
         neutral = synth[(synth.grade == grade) & synth.bg_type.isin(NEUTRAL_BACKGROUNDS)]
         synth_paths = neutral.sample(min(n_images, len(neutral)), random_state=seed).path
-        real_px, synth_px = pooled_pixels(real_paths), pooled_pixels(synth_paths)
+        real_images = [fruit_hsv(p) for p in real_paths]
+        synth_images = [fruit_hsv(p) for p in synth_paths]
+        real_px, synth_px = np.concatenate(real_images), np.concatenate(synth_images)
+        covered, low, high = coverage(real_images, synth_images)
         for r, (name, channel) in enumerate((("hue", 0), ("saturation", 1))):
             ax = axes[r][c]
             ax.hist(real_px[:, channel], bins=bins[name], density=True, alpha=0.5, label=f"real train ({len(real_paths)})")
@@ -85,7 +97,11 @@ def hue_sat_histograms(real, synth, out_path, n_images, seed):
             ax.legend(fontsize=7)
         summary.append({"grade": grade, "real images": len(real_paths), "synthetic images": len(synth_paths),
                         "real hue": np.median(real_px[:, 0]), "synthetic hue": np.median(synth_px[:, 0]),
-                        "real sat": np.median(real_px[:, 1]), "synthetic sat": np.median(synth_px[:, 1])})
+                        "real sat": np.median(real_px[:, 1]), "synthetic sat": np.median(synth_px[:, 1]),
+                        "real value": np.median(real_px[:, 2]), "synthetic value": np.median(synth_px[:, 2]),
+                        **{f"{name} coverage %": covered[i] for i, name in enumerate(("hue", "sat", "value"))},
+                        **{f"synthetic {name} 5-95%": f"{low[i]:.3f}-{high[i]:.3f}"
+                           for i, name in enumerate(("hue", "sat", "value"))}})
     fig.suptitle("Fruit pixels (saturation > 0.25); synthetic only on light or dark-belt backgrounds")
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
@@ -117,8 +133,11 @@ def main():
     sample_grid(synth, out_dir / "sample_synthetic.png", args.seed)
     real_vs_synthetic_grid(real, synth, out_dir / f"real_vs_synthetic_{tag}.png", args.seed)
     summary = hue_sat_histograms(real, synth, out_dir / f"hue_sat_{tag}.png", args.n_images, args.seed)
+    medians = [c for c in summary.columns if "coverage" not in c and "5-95" not in c]
     print("\nMedian of fruit pixels:")
-    print(summary.round(3).to_string(index=False))
+    print(summary[medians].round(3).to_string(index=False))
+    print("\nCoverage: % of real train images whose median lies in the synthetic 5th-95th percentile:")
+    print(summary[["grade"] + [c for c in summary.columns if "coverage" in c or "5-95" in c]].round(1).to_string(index=False))
 
     if args.phash:
         groups = duplicate_groups(synth.path.tolist(), args.hash_threshold)

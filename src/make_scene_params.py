@@ -50,6 +50,12 @@ def hsv_to_srgb(rng, ranges):
     return colorsys.hsv_to_rgb(draw(rng, ranges["hue"]), draw(rng, ranges["saturation"]), draw(rng, ranges["value"]))
 
 
+def direction(degrees_from_vertical, azimuth):
+    # Unit vector from the fruit, tilted away from straight up and turned by azimuth (degrees)
+    tilt, turn = math.radians(degrees_from_vertical), math.radians(azimuth)
+    return (math.sin(tilt) * math.cos(turn), math.sin(tilt) * math.sin(turn), math.cos(tilt))
+
+
 def sample_defect(rng, cfg, kind):
     params = {"defect_type": kind,
               "shift_dark": draw(rng, cfg["shift_dark"]),
@@ -112,19 +118,27 @@ def sample_params(grade, rng, cfg, defect_type=None):
     if grade == "defective":
         params.update(sample_defect(rng, cfg, kind))
 
-    # Light on a hemisphere above the fruit
-    elevation, azimuth = math.radians(draw(rng, light["elevation"])), math.radians(draw(rng, light["azimuth"]))
-    distance = draw(rng, light["distance"])
-    params["light_location"] = (distance * math.cos(elevation) * math.cos(azimuth),
-                                distance * math.cos(elevation) * math.sin(azimuth),
-                                distance * math.sin(elevation))
-    params["light_energy"] = draw(rng, light["energy"])
-    params["light_temperature"] = draw(rng, light["temperature"])
-
     params["camera_tilt"] = draw(rng, camera["tilt"])
     params["camera_azimuth"] = draw(rng, camera["azimuth"])
     params["fill"] = draw(rng, camera["fill"])
     params["camera_shift"] = (draw(rng, camera["shift"]), draw(rng, camera["shift"]))
+
+    # Key light on a hemisphere above the fruit, redrawn until it is within max_angle_from_camera
+    # of the camera direction: front to side lighting, never backlit (the real photos are lit
+    # from the camera side, and backlit renders came out far darker than any real photo)
+    view = direction(params["camera_tilt"], params["camera_azimuth"])
+    for _ in range(1000):
+        elevation, azimuth = draw(rng, light["elevation"]), draw(rng, light["azimuth"])
+        key = direction(90 - elevation, azimuth)
+        if math.degrees(math.acos(min(1.0, sum(a * b for a, b in zip(view, key))))) <= light["max_angle_from_camera"]:
+            break
+    else:
+        raise ValueError("no key light direction within max_angle_from_camera; check the light ranges")
+    distance = draw(rng, light["distance"])
+    params["light_location"] = tuple(distance * k for k in key)
+    params["light_energy"] = draw(rng, light["energy"])
+    params["light_temperature"] = draw(rng, light["temperature"])
+    params["fill_ratio"] = draw(rng, light["fill_ratio"])
 
     bg_type = pick(rng, bg["types"])
     params["bg_type"] = bg_type
