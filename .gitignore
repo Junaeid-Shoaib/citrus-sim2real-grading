@@ -6,6 +6,9 @@ checkpoints/
 *.pt
 *.pth
 
+# Training logs, kept locally; the results that matter are in results/
+logs/
+
 # Environment and OS clutter
 .venv/
 __pycache__/
