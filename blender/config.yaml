@@ -83,7 +83,7 @@ wide:
   grades:
     fresh:     {hue: [0.082, 0.109], saturation: [0.86, 1.0], value: [0.52, 0.92],
                 blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
-    green:     {hue: [0.145, 0.22], saturation: [0.9, 1.0], value: [0.34, 0.45],
+    green:     {hue: [0.145, 0.22], saturation: [0.82, 1.0], value: [0.34, 0.45],
                 blotch_hue_offset: [-0.07, -0.03], blotch_amount: [0.0, 0.6]}
     defective:
       spots:   {hue: [0.089, 0.129], saturation: [0.86, 1.0], value: [0.42, 0.82],
@@ -121,8 +121,9 @@ wide:
     # Phone-camera colour processing, applied after rendering (src/camera_process.py), same for all
     # grades. Real photos have very saturated pixels the renders could not reach (pilot 4 saturation
     # coverage 28-75%).
-    saturation_boost: [1.0, 1.25]
-    contrast_boost: [1.0, 1.15]
+    # Two-sided: a 1.0-1.25 boost shifted fresh and green up as a whole instead of widening them
+    saturation_boost: [0.85, 1.2]
+    contrast_boost: [0.95, 1.15]
   background:
     # Weights reflect the real train photos: mostly white or light grey, some worktop or cloth.
     # Dark belt and random colours are there to make the background clearly not a cue.

@@ -274,6 +274,14 @@ CLAUDE.md says to check for near-duplicates before training.
 - Neither setting models a real grading machine. Narrow is matched to the look of the real photos (light background), and the dark belt appears only as one option in wide.
 - Mould stays inside the rot patch and ends at a fairly sharp edge. Real mould (2 of 12 sampled rotten train images) spreads over up to half the fruit with a soft white fringe. The synthetic mould is powdery inside but does not reproduce that spread.
 
+- Colour match to the real train split, measured on the final wide pilot (pilot 5: 300 images, about 60 per grade on light or dark-belt backgrounds, coverage = % of real train images whose median lies inside the synthetic 5th to 95th percentile):
+  - Hue coverage 87% (fresh), 100% (green), 90% (defective). Saturation 98%, 100%, 93%. Value 93%, 95%, 77%.
+  - Defective brightness is the main gap: synthetic median 0.46 against real 0.58, coverage 77%; the brightest real defective fruit is not reached. The defective/fresh brightness ratio matches real (0.67), so the gap comes with the overall fresh offset below, not from the defective shift.
+  - Fresh is darker overall: median value 0.70 against real 0.86, although 93% of real fresh images are still covered.
+  - Green hue median is 0.165 against real 0.180; coverage is 100%.
+  - Narrow (measured on 30 test renders): green, blackspot and canker saturation sit 0.01 to 0.04 outside the real 25th to 75th percentile; canker is the furthest (0.74 against 0.78 to 0.87).
+  - These are colour statistics only. They say nothing about shape, texture or defect appearance, which were checked by eye.
+
 ## 10. Out of scope for Stage 2
 
 - No training (Stage 3).
