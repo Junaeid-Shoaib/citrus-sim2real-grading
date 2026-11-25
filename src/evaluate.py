@@ -112,12 +112,13 @@ def main():
         "run_id": run_id,
         "date": date.today().isoformat(),
         "train_source": run["train_source"],
-        "real_fraction": 1.0 if run["train_source"] == "real" else run.get("real_fraction", ""),
+        "real_fraction": {"real": 1.0, "synthetic": 0.0}[run["train_source"]],
         "model": "resnet18",
         "lr": f"{run['lr_a']:g}/{run['lr_b']:g}",
         "epochs": f"{run['epochs_a']}+{run['epochs_b']}",
         "seed": run["seed"],
-        "val_acc": round(checkpoint["best_val_acc"], 4),
+        # Stage 1 checkpoints saved it under the older key name
+        "val_acc": round(checkpoint.get("val_acc", checkpoint.get("best_val_acc")), 4),
         "test_acc": round(test_acc, 4),
         "notes": args.notes,
     }
