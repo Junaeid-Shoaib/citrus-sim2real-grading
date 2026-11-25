@@ -274,13 +274,15 @@ CLAUDE.md says to check for near-duplicates before training.
 - Neither setting models a real grading machine. Narrow is matched to the look of the real photos (light background), and the dark belt appears only as one option in wide.
 - Mould stays inside the rot patch and ends at a fairly sharp edge. Real mould (2 of 12 sampled rotten train images) spreads over up to half the fruit with a soft white fringe. The synthetic mould is powdery inside but does not reproduce that spread.
 
-- Colour match to the real train split, measured on the final wide pilot (pilot 5: 300 images, about 60 per grade on light or dark-belt backgrounds, coverage = % of real train images whose median lies inside the synthetic 5th to 95th percentile):
-  - Hue coverage 87% (fresh), 100% (green), 90% (defective). Saturation 98%, 100%, 93%. Value 93%, 95%, 77%.
-  - Defective brightness is the main gap: synthetic median 0.46 against real 0.58, coverage 77%; the brightest real defective fruit is not reached. The defective/fresh brightness ratio matches real (0.67), so the gap comes with the overall fresh offset below, not from the defective shift.
-  - Fresh is darker overall: median value 0.70 against real 0.86, although 93% of real fresh images are still covered.
-  - Green hue median is 0.165 against real 0.180; coverage is 100%.
-  - Narrow (measured on 30 test renders): green, blackspot and canker saturation sit 0.01 to 0.04 outside the real 25th to 75th percentile; canker is the furthest (0.74 against 0.78 to 0.87).
+- Colour match to the real train split, measured on the full wide batch (3,000 images; 500 per grade on light or dark-belt backgrounds against 500 real train images per grade; coverage = % of real train images whose median lies inside the synthetic 5th to 95th percentile). Pilot 5 numbers in brackets:
+  - Hue coverage 91% (87) fresh, 100% (100) green, 94% (90) defective. Saturation 98% (98), 100% (100), 93% (93). Value 96% (93), 99% (95), 84% (77).
+  - Defective brightness is the main gap: synthetic median 0.43 against real 0.58, coverage 84%; the brightest real defective fruit is not reached. Defective saturation is also lower (median 0.72 against 0.82): the histogram lacks the real peak at 0.85 to 0.95.
+  - Fresh is darker overall: median value 0.71 against real 0.86, although 96% of real fresh images are still covered.
+  - Green hue median is 0.169 against real 0.180; coverage is 100%.
+  - Narrow is deliberately tight, so its coverage of the real 5th to 95th spread is low by design (hue 65/60/70%, saturation 29/29/63%, value 45/56/90% for fresh/green/defective). Its medians: fresh value 0.82 (real 0.86), green hue 0.169 (0.180), defective value 0.46 (0.58).
+  - Narrow calibration (measured on 30 test renders): green, blackspot and canker saturation sit 0.01 to 0.04 outside the real 25th to 75th percentile; canker is the furthest (0.74 against 0.78 to 0.87).
   - These are colour statistics only. They say nothing about shape, texture or defect appearance, which were checked by eye.
+- Near-duplicate check (D8b) on the full batch: wide has 26 phash groups of 2 or 3 images (54 images), and 14 of them mix grades, so they are similar poses and framings, not repeated renders. In narrow, phash links 2,376 of 3,000 images into chains (largest 2,328, all three grades): every narrow image has the same centred framing on the same light surface, and phash compares grey-level structure, not colour. Pairs inside the big group still differ by 7 to 38 grey levels per pixel on average, and no two files in either set are identical. So phash is not a useful duplicate test for narrow, and narrow train/val images are far more alike than wide ones; that is the point of the narrow setting, but it makes narrow synthetic val accuracy optimistic.
 
 ## 10. Out of scope for Stage 2
 

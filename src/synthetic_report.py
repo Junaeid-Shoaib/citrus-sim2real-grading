@@ -42,7 +42,7 @@ def coverage(real_pixels, synth_pixels):
     return 100 * inside.mean(axis=0), low, high
 
 
-def image_grid(rows, out_path, title_size=8):
+def image_grid(rows, out_path, title_size=8, dpi=110):
     # rows: list of (row label, [(path, title), ...]); every row has the same length
     n_cols = max(len(items) for _, items in rows)
     fig, axes = plt.subplots(len(rows), n_cols, figsize=(1.6 * n_cols, 1.75 * len(rows)), squeeze=False)
@@ -56,7 +56,7 @@ def image_grid(rows, out_path, title_size=8):
                 ax.set_title(title, fontsize=title_size)
         axes[r][0].text(-0.1, 0.5, label, transform=axes[r][0].transAxes, ha="right", va="center", fontsize=9)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
+    fig.savefig(out_path, dpi=dpi)
     plt.close(fig)
 
 
@@ -74,7 +74,8 @@ def real_vs_synthetic_grid(real, synth, out_path, seed):
         synth_rows = synth[synth.grade == grade].sample(8, random_state=seed)
         rows.append((f"real\n{grade}", [(p, "") for p in real_rows.path]))
         rows.append((f"synthetic\n{grade}", [(p, "") for p in synth_rows.path]))
-    image_grid(rows, out_path)
+    # 48 photos in one figure: a lower dpi keeps the tracked PNG small
+    image_grid(rows, out_path, dpi=55)
 
 
 def hue_sat_histograms(real, synth, out_path, n_images, seed):
