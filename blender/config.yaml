@@ -1,0 +1,122 @@
+# Scenario matrix for the synthetic generator (spec section 6).
+# A range is [min, max], sampled uniformly; a single number is fixed.
+# src/make_scene_params.py merges `shared` with the block named by `randomisation`.
+
+randomisation: wide   # narrow | wide; --randomisation on the command line overrides it
+
+# Peel colours are material (albedo) HSV values. They come from the real TRAIN split only:
+# per-image median of fruit pixels (saturation > 0.25), wide = 5th-95th percentile,
+# narrow = 25th-75th. Rendering changes colour (lighting, sheen), so the material values were
+# calibrated by rendering 30 narrow test images (6 per class) and adjusting until each class's
+# rendered median sat inside the real 25th-75th percentile range. Wide keeps the same offsets.
+# Defective fruit: hue per defect type from that real class (blackspot, canker, rotten). Value is
+# the pre-shift brightness, calibrated per type so that after the global shift (and rot's dark
+# patch) the rendered brightness matches the real class.
+# Step 2.4's hue/saturation histograms check the result against the real train images.
+
+shared:
+  # Label semantics: identical in narrow and wide
+  defect_types: [spots, lesions, rot]      # one per defective image, chosen evenly
+  # Real defective train fruit vs fresh (median of per-image medians): value x0.64 (blackspot),
+  # x0.65 (canker), x0.76 (rot); saturation x0.89-0.97; hue not browner. So the shift darkens
+  # and slightly dulls. Ranges start at 0 so some defective fruit has no shift; the means
+  # (dark 0.33, dull 0.06) give value ~x0.68 and saturation ~x0.94. Caps asserted in generate.py.
+  shift_dark: [0.0, 0.65]
+  shift_dull: [0.0, 0.12]
+  shift_rough: [0.0, 0.3]
+  patch_degrees_from_view: [0, 60]         # defect centres stay on the visible face
+  # 2 of 12 real rotten train images showed mould, both heavy; the rest a bare patch
+  mould_probability: 0.17
+  mould_amount: [0.7, 1.0]
+  mould_mix: [0.3, 1.0]
+  stem_mix: [0.0, 1.0]                     # stem colour olive to dark brown (D6)
+  pattern_offset: [0.0, 100.0]             # new procedural patterns per image
+  rotation: [0.0, 6.2832]                  # radians, each Euler axis; any pose in both settings
+
+narrow:
+  grades:
+    fresh:     {hue: [0.093, 0.101], saturation: [0.95, 1.0], value: [0.68, 0.87],
+                blotch_hue_offset: [-0.005, 0.01], blotch_amount: [0.1, 0.2]}
+    green:     {hue: [0.164, 0.195], saturation: [0.95, 1.0], value: [0.36, 0.41],
+                blotch_hue_offset: [-0.06, -0.04], blotch_amount: [0.2, 0.4]}
+    defective:
+      spots:   {hue: [0.093, 0.097], saturation: [0.95, 1.0], value: [0.52, 0.7],
+                blotch_hue_offset: [-0.005, 0.01], blotch_amount: [0.1, 0.2]}
+      lesions: {hue: [0.109, 0.125], saturation: [0.95, 1.0], value: [0.52, 0.7],
+                blotch_hue_offset: [0.01, 0.03], blotch_amount: [0.2, 0.4]}
+      rot:     {hue: [0.097, 0.113], saturation: [0.95, 1.0], value: [0.8, 0.95],
+                blotch_hue_offset: [-0.005, 0.01], blotch_amount: [0.1, 0.2]}
+  shape:
+    squash: [0.88, 0.92]
+    lumpiness: [0.025, 0.035]
+    pit_scale: [17, 19]
+    bump_strength: [0.28, 0.32]
+    roughness: [0.38, 0.42]
+  defects:                                 # middle of the wide ranges
+    spots:   {scale: [4.0, 4.5], radius: [0.03, 0.035]}
+    lesions: {scale: [7.5, 8.5], radius: [0.02, 0.024], distort: 0.035}
+    rot:     {count: [1, 1], radius: [0.4, 0.45]}
+  light:
+    energy: 400
+    elevation: 70                          # degrees above the ground
+    azimuth: 315
+    distance: 6.6
+    temperature: 6500                     # neutral: the real photos are white-balanced
+  camera:
+    tilt: 0                                # straight down
+    azimuth: 0
+    fill: 0.85                             # median real fruit covers ~57% of pixels, i.e. ~85% of the width
+    shift: [0.0, 0.0]
+  background:                              # D4(b): light surface only, no texture
+    types: {light: 1.0}
+    light: {hue: [0.0, 1.0], saturation: [0.0, 0.03], value: [0.85, 0.95]}
+    patterns: {plain: 1.0}
+    pattern_strength: 0.0
+    pattern_scale: 10
+
+wide:
+  grades:
+    fresh:     {hue: [0.082, 0.109], saturation: [0.86, 1.0], value: [0.52, 0.92],
+                blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
+    green:     {hue: [0.14, 0.2], saturation: [0.9, 1.0], value: [0.34, 0.45],
+                blotch_hue_offset: [-0.07, -0.03], blotch_amount: [0.0, 0.6]}
+    defective:
+      spots:   {hue: [0.089, 0.129], saturation: [0.86, 1.0], value: [0.42, 0.82],
+                blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
+      lesions: {hue: [0.089, 0.152], saturation: [0.86, 1.0], value: [0.42, 0.82],
+                blotch_hue_offset: [0.0, 0.04], blotch_amount: [0.0, 0.5]}
+      rot:     {hue: [0.07, 0.148], saturation: [0.86, 1.0], value: [0.62, 1.0],
+                blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
+  shape:
+    squash: [0.82, 0.97]
+    lumpiness: [0.0, 0.06]
+    pit_scale: [12, 26]
+    bump_strength: [0.15, 0.5]
+    roughness: [0.25, 0.55]
+  defects:
+    spots:   {scale: [3.0, 5.5], radius: [0.02, 0.045]}    # about 5 to 30 visible black spots
+    # Canker: many small, irregular, raised corky marks (11 of 12 real cankered train images)
+    lesions: {scale: [6.0, 10.0], radius: [0.015, 0.03], distort: [0.02, 0.05]}
+    rot:     {count: [1, 2], radius: [0.25, 0.6]}           # generate.py asserts radius <= 0.7
+  light:
+    energy: [200, 800]
+    elevation: [30, 80]
+    azimuth: [0, 360]
+    distance: 6.6
+    temperature: [4500, 8500]             # centred on neutral 6500 K; models white-balance error
+  camera:
+    tilt: [0, 60]
+    azimuth: [0, 360]
+    fill: [0.55, 1.0]
+    shift: [-0.08, 0.08]                   # each of x and y
+  background:
+    # Weights reflect the real train photos: mostly white or light grey, some worktop or cloth.
+    # Dark belt and random colours are there to make the background clearly not a cue.
+    types: {light: 0.45, beige: 0.15, dark_belt: 0.2, random: 0.2}
+    light:     {hue: [0.0, 1.0], saturation: [0.0, 0.08], value: [0.75, 0.98]}
+    beige:     {hue: [0.08, 0.14], saturation: [0.1, 0.25], value: [0.7, 0.9]}
+    dark_belt: {hue: [0.0, 1.0], saturation: [0.0, 0.05], value: [0.03, 0.12]}
+    random:    {hue: [0.0, 1.0], saturation: [0.1, 0.6], value: [0.2, 0.9]}
+    patterns: {plain: 0.5, speckle: 0.25, noise: 0.25}
+    pattern_strength: [0.2, 0.6]
+    pattern_scale: [5, 40]

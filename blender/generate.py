@@ -17,7 +17,7 @@ import sys
 import time
 
 import bpy
-from mathutils import Euler, Vector  # pyright: ignore[reportMissingImports]
+from mathutils import Euler, Vector
 
 IMAGE_SIZE = 224
 RENDER_SAMPLES = 32  # 16 left visible grain on the shadow edge in the benchmark
@@ -35,12 +35,13 @@ DEFAULT_PARAMS = {
     "roughness": 0.4,         # waxy peel: some shine, not mirror-like
     # Global shift of defective fruit (spec 2.2); each starts at 0, so 0 means no shift
     "shift_dull": 0.0,        # fraction of saturation removed
-    "shift_brown": 0.0,       # fraction of the way the hue moves toward brown-orange
+    "shift_dark": 0.0,        # fraction of brightness removed
     "shift_rough": 0.0,       # added to roughness (less shine)
-    "defect_type": "none",    # none | spots | lesions | rot
+    "defect_type": "none",    # none | spots (blackspot) | lesions (canker) | rot
     "spot_scale": 4.0,        # Voronoi cells per unit; about 3 gives ~5 visible spots, 5.5 gives ~30
     "spot_radius": 0.03,      # spot radius in fruit-radius units (about 2 px at 224 px)
-    # Lesion or rot patches: (degrees from the view direction, azimuth degrees, radius); up to 3, radius at most MAX_PATCH_RADIUS
+    "spot_distort": 0.0,      # canker: noise distortion of the cells so marks are irregular, not round
+    # Rot patches: (degrees from the view direction, azimuth degrees, radius); up to 3, radius at most MAX_PATCH_RADIUS
     "patches": [],
     "mould_amount": 0.0,      # rot only: how much of the patch is covered in mould
     "mould_mix": 0.0,         # 0 = all-white mould, 1 = grey-green spore centres inside white margins
@@ -51,8 +52,16 @@ DEFAULT_PARAMS = {
     "rotation": (0.5, 0.3, 0.0),  # radians, tilted so the stem is visible but off-centre
     "light_energy": 400.0,    # watts
     "light_location": (2.0, -2.0, 6.0),
+    "light_temperature": 6500.0,  # kelvin; 6500 is close to neutral white
     "fill": 0.7,              # fraction of the image width the fruit covers
+    "camera_tilt": 0.0,       # degrees from straight down
+    "camera_azimuth": 0.0,    # degrees around the fruit
+    "camera_shift": (0.0, 0.0),  # lens shift as a fraction of the frame, moves the fruit off-centre
     "stem_mix": 0.5,          # 0 = olive green, 1 = dark brown
+    "bg_colour": (0.03, 0.03, 0.03),  # sRGB; default is the dark belt
+    "bg_pattern": "plain",    # plain | speckle (worktop) | noise (cloth or paper folds)
+    "bg_pattern_strength": 0.0,
+    "bg_pattern_scale": 10.0,
 }
 
 # Stem colour range (sRGB), from stems seen in the real train split: olive-grey to near-black brown
@@ -61,35 +70,32 @@ STEM_BROWN = (0.20, 0.12, 0.05)
 
 # Defect colours (sRGB), matched by eye to the real defective train images
 SPOT_COLOUR = (0.10, 0.07, 0.04)          # blackspot: near-black pits
-LESION_COLOUR = (0.45, 0.38, 0.28)        # canker: grey-brown raised lesion
-HALO_COLOUR = (0.75, 0.68, 0.35)          # canker: faint yellow ring around each lesion
+CANKER_COLOUR = (0.42, 0.30, 0.16)        # canker: light-brown corky marks
 # Rot and mould colours start from real rotten train images (10x10 px averages), adjusted so renders match
 ROT_DARK = (0.26, 0.15, 0.03)             # dark brown patch
 ROT_OLIVE = (0.45, 0.33, 0.15)            # olive-brown patch (more saturated than measured: renders came out grey)
 MOULD_WHITE = (0.90, 0.89, 0.85)          # mycelium margin
 MOULD_BLUE_GREEN = (0.40, 0.48, 0.42)     # muted grey-green spore centre (darker than measured: top light brightens it)
-BROWN_HUE = 0.07                          # global shift pulls the peel hue toward this
 
-# Caps on the global shift: beyond these a greenish base turned beige, which would make
-# "beige means defective" a shortcut and undo D5. Checked by rendering greenish bases at the caps.
-MAX_SHIFT_BROWN = 0.15
-MAX_SHIFT_DULL = 0.2
+# Caps on the global shift. Real defective train fruit is 0.64-0.76x as bright as fresh and
+# 0.89-0.97x as saturated, with no shift toward brown, so the shift darkens and slightly dulls.
+# Keeping dulling small stops a greenish base turning beige ("beige means defective" shortcut, D5).
+MAX_SHIFT_DARK = 0.65
+MAX_SHIFT_DULL = 0.12
 
-DEFECT_TYPES = ["spots", "lesions", "rot"]
-MAX_PATCHES = 3  # fixed number of patch slots, so the shader layout never changes
+DEFECT_TYPES = ["spots", "lesions", "rot"]   # blackspot, canker, rot
+MAX_PATCHES = 3  # fixed number of rot patch slots, so the shader layout never changes
 
-# Patch edge shape per defect type: lesions are crisp with a halo; rot is soft, irregular,
-# with a water-soaked rim. "outer" is where the halo or rim ends, as a multiple of the radius.
-PATCH_SHAPE = {
-    "lesions": {"wobble": 0.1, "core_soft": 0.8, "outer": 1.4},
-    "rot": {"wobble": 0.25, "core_soft": 0.55, "outer": 1.15},
-}
+# Rot patch edge: soft, irregular, with a water-soaked rim. "outer" is where the rim ends, as a
+# multiple of the radius. Canker no longer uses patches: it reuses the spot machinery.
+PATCH_WOBBLE = 0.25
+PATCH_CORE_SOFT = 0.55
+PATCH_OUTER = 1.15
 MAX_PATCH_RADIUS = 0.7   # chord length on the unit sphere, about 41 degrees: a local patch, not the whole fruit
 UNUSED_RADIUS = 0.01
 # An unused slot has its centre at the fruit's centre, so every surface point is 1.0 from it.
 # It can only show if its outer edge plus the worst-case edge wobble reaches 1.0.
-assert max(s["outer"] for s in PATCH_SHAPE.values()) * UNUSED_RADIUS \
-    + max(s["wobble"] for s in PATCH_SHAPE.values()) / 2 < 0.5
+assert PATCH_OUTER * UNUSED_RADIUS + PATCH_WOBBLE / 2 < 0.5
 
 
 def srgb_to_linear(c):
@@ -181,6 +187,8 @@ def make_peel_material():
     mat = bpy.data.materials.new("peel")
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     bsdf = nodes["Principled BSDF"]
+    # Half the default white sheen: at 0.5 the white reflection greyed the peel colour
+    bsdf.inputs["Specular IOR Level"].default_value = 0.25
 
     # Object coordinates so patterns stay fixed on the peel when the fruit rotates
     coords = nodes.new("ShaderNodeTexCoord").outputs["Object"]
@@ -211,25 +219,47 @@ def make_peel_material():
     lesions_on = named(nodes, "ShaderNodeValue", "lesions_on").outputs[0]
     rot_on = named(nodes, "ShaderNodeValue", "rot_on").outputs[0]
 
-    # Spots: thresholded Voronoi, masked to the camera-facing cap (within 60 degrees, cos 60 = 0.5)
+    # Blackspot and canker share one mechanism: thresholded Voronoi cells, masked to the
+    # camera-facing cap (within 60 degrees, cos 60 = 0.5). Canker distorts the cells so marks are
+    # irregular, colours them light brown with corky mottling, and raises them instead of sinking them.
+    cork_noise = nodes.new("ShaderNodeTexNoise")
+    cork_noise.inputs["Scale"].default_value = 30.0
+    links.new(shifted, cork_noise.inputs["Vector"])
+    centred = nodes.new("ShaderNodeVectorMath")
+    centred.operation = "SUBTRACT"
+    links.new(cork_noise.outputs["Color"], centred.inputs[0])
+    centred.inputs[1].default_value = (0.5, 0.5, 0.5)
+    distortion = nodes.new("ShaderNodeVectorMath")
+    distortion.operation = "SCALE"
+    links.new(centred.outputs[0], distortion.inputs[0])
+    links.new(named(nodes, "ShaderNodeValue", "spot_distort").outputs[0], distortion.inputs["Scale"])
+    spot_coords = nodes.new("ShaderNodeVectorMath")
+    spot_coords.operation = "ADD"
+    links.new(shifted, spot_coords.inputs[0])
+    links.new(distortion.outputs[0], spot_coords.inputs[1])
+
     spot_tex = named(nodes, "ShaderNodeTexVoronoi", "spot_cells")
-    links.new(shifted, spot_tex.inputs["Vector"])
-    spots = map_range(nodes, links, spot_tex.outputs["Distance"], "spot_edges")
+    links.new(spot_coords.outputs[0], spot_tex.inputs["Vector"])
+    marks = map_range(nodes, links, spot_tex.outputs["Distance"], "spot_edges")
     facing = nodes.new("ShaderNodeVectorMath")
     facing.operation = "DOT_PRODUCT"
     links.new(direction, facing.inputs[0])
     links.new(named(nodes, "ShaderNodeCombineXYZ", "camera_direction").outputs[0], facing.inputs[1])
     cap = math_op(nodes, links, "GREATER_THAN", facing.outputs["Value"], 0.5)
-    spots = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", spots, cap), spots_on)
-    colour = mix_colour(nodes, links, colour, linear_rgba(SPOT_COLOUR), spots)
+    marks = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", marks, cap),
+                    math_op(nodes, links, "ADD", spots_on, lesions_on))
+    cork_colour = mix_colour(nodes, links, linear_rgba(CANKER_COLOUR),
+                             linear_rgba(tuple(c * 0.5 for c in CANKER_COLOUR)), cork_noise.outputs["Fac"])
+    mark_colour = mix_colour(nodes, links, linear_rgba(SPOT_COLOUR), cork_colour, lesions_on)
+    colour = mix_colour(nodes, links, colour, mark_colour, marks)
 
-    # Patches for lesions and rot: distance from each centre, roughened by noise so edges are irregular
+    # Rot patches: distance from each centre, roughened by noise so edges are irregular
     edge_noise = nodes.new("ShaderNodeTexNoise")
     edge_noise.inputs["Scale"].default_value = 6.0
     edge_noise.inputs["Detail"].default_value = 0.0  # one octave: smooth irregular lobes; finer octaves scalloped the edge at 224 px
     links.new(shifted, edge_noise.inputs["Vector"])
     wobble = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "SUBTRACT", edge_noise.outputs["Fac"], 0.5),
-                     named(nodes, "ShaderNodeValue", "edge_wobble").outputs[0])
+                     PATCH_WOBBLE)
     core, outer = 0.0, 0.0
     for i in range(MAX_PATCHES):
         distance = nodes.new("ShaderNodeVectorMath")
@@ -239,20 +269,14 @@ def make_peel_material():
         d = math_op(nodes, links, "ADD", distance.outputs["Value"], wobble)
         core = math_op(nodes, links, "MAXIMUM", core, map_range(nodes, links, d, f"patch{i}_core"))
         outer = math_op(nodes, links, "MAXIMUM", outer, map_range(nodes, links, d, f"patch{i}_outer"))
-    halo = math_op(nodes, links, "SUBTRACT", outer, core)  # ring just outside the core
-    halo.node.use_clamp = True
-
-    # Canker: yellow halo then grey-brown core
-    colour = mix_colour(nodes, links, colour, linear_rgba(HALO_COLOUR),
-                        math_op(nodes, links, "MULTIPLY", halo, math_op(nodes, links, "MULTIPLY", lesions_on, 0.6)))
-    lesion = math_op(nodes, links, "MULTIPLY", core, lesions_on)
-    colour = mix_colour(nodes, links, colour, linear_rgba(LESION_COLOUR), lesion)
+    ring = math_op(nodes, links, "SUBTRACT", outer, core)  # band just outside the core
+    ring.node.use_clamp = True
 
     # Rot: dark-brown to olive-brown patch (mottled by the edge noise), ringed by a darker water-soaked rim
     rot = math_op(nodes, links, "MULTIPLY", core, rot_on)
     rot_colour = mix_colour(nodes, links, linear_rgba(ROT_DARK), linear_rgba(ROT_OLIVE), edge_noise.outputs["Fac"])
     colour = mix_colour(nodes, links, colour, rot_colour, rot)
-    rim = math_op(nodes, links, "MULTIPLY", halo, rot_on)
+    rim = math_op(nodes, links, "MULTIPLY", ring, rot_on)
     darken = nodes.new("ShaderNodeMix")
     darken.data_type = "RGBA"
     darken.blend_type = "MULTIPLY"
@@ -278,21 +302,26 @@ def make_peel_material():
     colour = mix_colour(nodes, links, colour, linear_rgba(MOULD_BLUE_GREEN), spores)
     links.new(colour, bsdf.inputs["Base Color"])
 
-    # Rot and mould are matte, the wet rim is glossy; the rest of the peel keeps its sampled roughness
-    roughness = map_range(nodes, links, math_op(nodes, links, "MAXIMUM", rot, mould), "roughness")
+    # Rot, mould and corky canker are matte, the wet rim is glossy; the rest of the peel keeps its sampled roughness
+    canker = math_op(nodes, links, "MULTIPLY", marks, lesions_on)
+    matte = math_op(nodes, links, "MAXIMUM", math_op(nodes, links, "MAXIMUM", rot, mould), canker)
+    roughness = map_range(nodes, links, matte, "roughness")
     roughness.node.interpolation_type = "LINEAR"
     roughness.node.inputs["To Max"].default_value = 0.9
     roughness = math_op(nodes, links, "SUBTRACT", roughness, math_op(nodes, links, "MULTIPLY", rim, 0.4))
     roughness.node.use_clamp = True
     links.new(roughness, bsdf.inputs["Roughness"])
 
-    # Height: oil-gland pits, plus raised lesions and sunken spots and rot
+    # Height: oil-gland pits, plus raised rough canker marks and sunken black spots and rot
     pits = named(nodes, "ShaderNodeTexVoronoi", "pits")
     links.new(coords, pits.inputs["Vector"])
-    height = math_op(nodes, links, "ADD", pits.outputs["Distance"], math_op(nodes, links, "MULTIPLY", lesion, 0.5))
+    corky_relief = math_op(nodes, links, "ADD", 0.5, cork_noise.outputs["Fac"])
+    height = math_op(nodes, links, "ADD", pits.outputs["Distance"],
+                     math_op(nodes, links, "MULTIPLY", canker, corky_relief))
     height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", rot, 1.0))
     height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", rim, 0.3))
-    height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", spots, 0.5))
+    black_spots = math_op(nodes, links, "MULTIPLY", marks, spots_on)
+    height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", black_spots, 0.5))
     bump = named(nodes, "ShaderNodeBump", "pit_bump")
     # Height is mostly Voronoi distance (0 to ~0.7); the 0.001 default made pits about 1000x too shallow to see
     bump.inputs["Distance"].default_value = 0.02
@@ -332,11 +361,40 @@ def make_stem_material():
     return mat
 
 
-def make_flat_material(name, rgb, roughness):
-    mat = bpy.data.materials.new(name)
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
-    bsdf.inputs["Roughness"].default_value = roughness
+def make_background_material():
+    """Surface under the fruit: plain, speckled worktop, or cloth/paper with soft folds.
+
+    Like the peel, the layout is fixed and patterns are switched with 0/1 factors.
+    """
+    mat = bpy.data.materials.new("background")
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = 0.8
+    coords = nodes.new("ShaderNodeTexCoord").outputs["Object"]
+    strength = named(nodes, "ShaderNodeValue", "bg_strength").outputs[0]
+    colour = named(nodes, "ShaderNodeRGB", "bg_colour").outputs[0]
+
+    # Speckle: small dark dots, like the speckled worktop in some real photos
+    speckle_tex = named(nodes, "ShaderNodeTexVoronoi", "bg_speckle")
+    links.new(coords, speckle_tex.inputs["Vector"])
+    speckle = map_range(nodes, links, speckle_tex.outputs["Distance"], "bg_speckle_edges")
+    speckle.node.inputs["From Min"].default_value = 0.12
+    speckle.node.inputs["From Max"].default_value = 0.08
+    speckle_on = named(nodes, "ShaderNodeValue", "bg_speckle_on").outputs[0]
+    speckle = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", speckle, speckle_on), strength)
+    colour = mix_colour(nodes, links, colour, (0.05, 0.05, 0.06, 1.0), speckle)
+
+    # Noise: soft light and dark areas plus a bump, like folds in a cloth or paper
+    noise_tex = named(nodes, "ShaderNodeTexNoise", "bg_noise")
+    links.new(coords, noise_tex.inputs["Vector"])
+    noise_on = named(nodes, "ShaderNodeValue", "bg_noise_on").outputs[0]
+    shade = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", noise_tex.outputs["Fac"], noise_on), strength)
+    colour = mix_colour(nodes, links, colour, (0.0, 0.0, 0.0, 1.0), math_op(nodes, links, "MULTIPLY", shade, 0.5))
+    links.new(colour, bsdf.inputs["Base Color"])
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Distance"].default_value = 0.05
+    links.new(shade, bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
     return mat
 
 
@@ -346,14 +404,16 @@ def build_scene():
     setup_render(scene)
 
     world = bpy.data.worlds.new("world")
-    # Dim grey ambient so shadowed peel is dark but not black
-    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.3, 0.3, 0.3, 1.0)
+    # Dim grey ambient so shadowed peel is dark but not black. 0.3 washed green and defective
+    # fruit out to 0.07-0.1 below the real saturation; 0.15 (with less sheen) matched it.
+    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.15, 0.15, 0.15, 1.0)
     scene.world = world
 
-    bpy.ops.mesh.primitive_plane_add(size=20)
-    belt = bpy.context.object
-    belt.name = "belt"
-    belt.data.materials.append(make_flat_material("belt", (0.03, 0.03, 0.03), 0.8))
+    # Large plane so a tilted camera never sees past its edge
+    bpy.ops.mesh.primitive_plane_add(size=100)
+    ground = bpy.context.object
+    ground.name = "ground"
+    ground.data.materials.append(make_background_material())
 
     bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=FRUIT_RADIUS)
     fruit = bpy.context.object
@@ -391,7 +451,7 @@ def build_scene():
 
 
 def rest_on_ground(fruit):
-    # D3: after rotation, drop the fruit so its lowest point touches the belt (z = 0)
+    # D3: after rotation, drop the fruit so its lowest point touches the ground (z = 0)
     fruit.location = (0, 0, 0)
     bpy.context.view_layer.update()
     evaluated = fruit.evaluated_get(bpy.context.evaluated_depsgraph_get())
@@ -408,12 +468,22 @@ def apply_params(scene, params):
 
     light = bpy.data.objects["light"]
     light.data.energy = params["light_energy"]
+    light.data.use_temperature = True
+    light.data.temperature = params["light_temperature"]
     light.location = params["light_location"]
     look_at(light, fruit.location)
 
+    # Camera on a sphere around the fruit: tilt 0 is straight down
     camera = scene.camera
-    camera.location = (0, 0, fruit.location.z + camera_height(params["fill"], camera.data.lens))
+    distance = camera_height(params["fill"], camera.data.lens)
+    tilt, azimuth = math.radians(params["camera_tilt"]), math.radians(params["camera_azimuth"])
+    camera.location = fruit.location + distance * Vector((math.sin(tilt) * math.cos(azimuth),
+                                                          math.sin(tilt) * math.sin(azimuth),
+                                                          math.cos(tilt)))
     look_at(camera, fruit.location)
+    camera.data.shift_x, camera.data.shift_y = params["camera_shift"]
+
+    apply_background(params)
     # The peel needs the final camera position to place defects on the visible side
     bpy.context.view_layer.update()
 
@@ -422,12 +492,22 @@ def apply_params(scene, params):
     stem_nodes["stem_colour"].inputs["Factor"].default_value = params["stem_mix"]
 
 
+def apply_background(params):
+    nodes = bpy.data.objects["ground"].data.materials[0].node_tree.nodes
+    nodes["bg_colour"].outputs[0].default_value = linear_rgba(params["bg_colour"])
+    nodes["bg_strength"].outputs[0].default_value = params["bg_pattern_strength"]
+    nodes["bg_speckle_on"].outputs[0].default_value = 1.0 if params["bg_pattern"] == "speckle" else 0.0
+    nodes["bg_noise_on"].outputs[0].default_value = 1.0 if params["bg_pattern"] == "noise" else 0.0
+    nodes["bg_speckle"].inputs["Scale"].default_value = params["bg_pattern_scale"]
+    nodes["bg_noise"].inputs["Scale"].default_value = params["bg_pattern_scale"]
+
+
 def shifted_rgba(hue, saturation, value, params):
-    # Global shift of defective fruit: duller and browner. All zero for fresh and green.
-    hue = hue + (BROWN_HUE - hue) * params["shift_brown"]
+    # Global shift of defective fruit: darker and slightly duller, hue unchanged (real defective
+    # fruit is not browner in hue; canker's yellower hue comes from its own base range).
+    # All zero for fresh and green.
     saturation = saturation * (1 - params["shift_dull"])
-    # Brown is a dark orange, so moving toward it also darkens; desaturating alone gave pastel peach
-    value = value * (1 - 2 * params["shift_brown"])
+    value = value * (1 - params["shift_dark"])
     return linear_rgba(colorsys.hsv_to_rgb(hue, saturation, value))
 
 
@@ -450,9 +530,10 @@ def view_to_object(fruit, view, degrees_from_view, azimuth):
 
 def apply_peel(fruit, camera, params):
     # Guards for the 2.4 sampler: generate.py refuses values outside the agreed ranges
-    assert 0 <= params["shift_brown"] <= MAX_SHIFT_BROWN, f"shift_brown above cap: {params['shift_brown']}"
+    assert 0 <= params["shift_dark"] <= MAX_SHIFT_DARK, f"shift_dark above cap: {params['shift_dark']}"
     assert 0 <= params["shift_dull"] <= MAX_SHIFT_DULL, f"shift_dull above cap: {params['shift_dull']}"
     assert len(params["patches"]) <= MAX_PATCHES, f"at most {MAX_PATCHES} patches"
+    assert not params["patches"] or params["defect_type"] == "rot", "only rot uses patches"
     assert all(0 < p[2] <= MAX_PATCH_RADIUS for p in params["patches"]), "patch radius out of range"
 
     nodes = fruit.data.materials[0].node_tree.nodes
@@ -477,10 +558,8 @@ def apply_peel(fruit, camera, params):
     nodes["spot_cells"].inputs["Scale"].default_value = params["spot_scale"]
     nodes["spot_edges"].inputs["From Min"].default_value = edge
     nodes["spot_edges"].inputs["From Max"].default_value = edge * 0.6
+    nodes["spot_distort"].outputs[0].default_value = params["spot_distort"]
 
-    # Only one defect type is on per image, so the patch slots take that type's edge shape
-    shape = PATCH_SHAPE["rot"] if params["defect_type"] == "rot" else PATCH_SHAPE["lesions"]
-    nodes["edge_wobble"].outputs[0].default_value = shape["wobble"]
     for i in range(MAX_PATCHES):
         if i < len(params["patches"]):
             degrees_from_view, azimuth, radius = params["patches"][i]
@@ -490,12 +569,12 @@ def apply_peel(fruit, camera, params):
             centre, radius = (0.0, 0.0, 0.0), UNUSED_RADIUS
         set_vector(nodes[f"patch{i}_centre"], centre)
         nodes[f"patch{i}_core"].inputs["From Min"].default_value = radius
-        nodes[f"patch{i}_core"].inputs["From Max"].default_value = radius * shape["core_soft"]
-        nodes[f"patch{i}_outer"].inputs["From Min"].default_value = radius * shape["outer"]
+        nodes[f"patch{i}_core"].inputs["From Max"].default_value = radius * PATCH_CORE_SOFT
+        nodes[f"patch{i}_outer"].inputs["From Min"].default_value = radius * PATCH_OUTER
         nodes[f"patch{i}_outer"].inputs["From Max"].default_value = radius * 0.95  # wide, smooth transition; 1.05 gave a sawtooth rim
 
-    # Lower threshold = more of the noise passes = more mould; at 0 the noise never reaches 0.8.
-    # Spore centres use a higher threshold on the same noise, so each blob keeps a white margin.
+    # Lower threshold on the mould field = more mould. Spore centres use a higher threshold on the
+    # same field, so the grey-green sits inside a white margin.
     mould_edge = 1.3 - 0.8 * params["mould_amount"]  # field peaks at 1.25, so amount 0 gives no mould
     nodes["mould_edges"].inputs["From Min"].default_value = mould_edge
     nodes["mould_edges"].inputs["From Max"].default_value = mould_edge + 0.3  # soft, fluffy margin

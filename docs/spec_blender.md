@@ -84,11 +84,11 @@ A `sample_params(grade, rng, cfg)` function returns a dict of numbers. A `apply_
 |---|---|---|
 | fresh | orange range, e.g. HSV hue 0.06 to 0.10, high saturation | none |
 | green | green to yellow-green, e.g. hue 0.16 to 0.30, with optional yellow blotches | none |
-| defective | orange, optionally widened toward yellow-green (D5) | one defect type plus a global shift |
+| defective | per defect type, from the matching real class (D5): blackspot orange, canker yellow-olive, rot orange to yellow | one defect type plus a global shift |
 
 Defect types (one per defective image, chosen evenly):
 - **spots:** 3 to 30 small dark brown or black spots from a thresholded Voronoi texture, plus a darker bump in the spot. Matches blackspotted.
-- **lesions:** fewer, larger brown or grey patches with a yellow halo ring. Matches cankered.
+- **lesions (canker):** many small, raised, irregular light-brown corky marks over the visible face, on a dull yellow-olive base. It uses the same masked Voronoi cells as spots, with the cells distorted by noise, a corky mottled colour, and raised instead of sunken. 11 of 12 real cankered train images look like this; only one showed a few medium patches, and none had the bright yellow halo, so the large-lesion look was dropped.
 - **rot:** one or two patches, matched to the real rotten train images.
   - Soft, irregular edge distorted by low-frequency noise.
   - Inside: dark-brown to olive-brown, matte, sunken.
@@ -96,16 +96,14 @@ Defect types (one per defective image, chosen evenly):
   - Optional mould that grows out from the patch centre: white at its margin, muted grey-green toward the middle. With mould_amount 0 there is no mould, which is the most common look in the real images.
 
 Global shift for every defective image, sampled not fixed:
-- Lower saturation (duller): saturation x (1 - shift_dull).
-- Hue nudged toward brown, and darker, because brown is a dark orange: hue moves shift_brown of the way to 0.07, value x (1 - 2 x shift_brown). Desaturating alone gave pastel peach.
+- Darker: value x (1 - shift_dark).
+- Slightly duller: saturation x (1 - shift_dull).
 - Higher roughness (less shine).
+- No hue change.
 
-Caps: shift_brown <= 0.15 and shift_dull <= 0.2, enforced by asserts in generate.py.
-- Why: at 0.4 and 0.3 a greenish base rendered beige. That would make "beige means defective" a shortcut and undo D5.
-- Checked at the caps on fruit pixels:
-  - green base hue 0.20 renders at 65 degrees, saturation 0.50 (olive);
-  - worst case hue 0.16 renders at 52 degrees, saturation 0.50 (olive-yellow, not beige);
-  - orange renders as dull brown-orange.
+Why: real defective train fruit compared with fresh (median of per-image medians) is 0.64x (blackspot), 0.65x (canker) and 0.76x (rot) as bright, 0.89 to 0.97x as saturated, and not browner in hue. Canker is yellower (hue 0.110 vs 0.082); that comes from canker's own base hue range, not from the shift. An earlier version pulled hue toward brown, which the data contradicts.
+
+Caps: shift_dark <= 0.65 and shift_dull <= 0.12, enforced by asserts in generate.py. Dulling stays small because desaturating a light greenish base turns it beige, which would make "beige means defective" a shortcut. Darkening keeps a greenish base olive.
 
 Each shift is sampled from a range that starts at 0, so some defective fruit has no global shift and is defective only because of its local defect. That stops the model from relying on overall dullness alone.
 
@@ -221,7 +219,7 @@ Blender's bundled Python (3.13) has numpy but not pyyaml.
   - Pro: forces the model to use the defects, not colour, to find defective fruit.
   - Con: a mildly defective greenish fruit is close to the green grade, so it is harder to learn.
 
-**Decided: (b).**
+**Decided: (b), then revised in Step 2.3 to follow the real data.** The real train split has no deep-green defective fruit: grade-level defective hue is 0.071 to 0.133 (5th to 95th percentile of per-image medians), cankered up to 0.145. So the defective base hue is not fresh plus green combined; it is set per defect type from the matching real class, which still includes greenish-yellow canker. In config.yaml these become material values (wide 0.07 to 0.152 across the three types), because rendering lowers orange hue by about 0.01.
 
 **D6. Stem or calyx on every fruit** (affects 2.1)
 - **(a) Add a small dark stem disk on all grades.**
