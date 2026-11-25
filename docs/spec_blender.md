@@ -101,7 +101,7 @@ Each shift is sampled from a range that starts at 0, so some defective fruit has
 Stage 1 Grad-CAM showed the real model uses broad peel cues, so local spots alone are not enough.
 
 **Defect placement.** Every defect has a centre point. Centres are sampled after the fruit's random rotation, on the camera-facing hemisphere: each centre lies within about 60 degrees of the direction from the fruit centre to the camera. The centre is then converted into the fruit's own coordinates, so the material puts the defect where it was sampled. This means no defective image has its defect hidden on the far side, which would be a defective label on a clean-looking image.
-- spots: all spots are scattered inside a cap around one centre.
+- spots: no centre; the spot texture is masked to the camera-facing cap (within about 60 degrees of the view direction), so spots spread across the visible face like real blackspot.
 - lesions and rot: each patch has its own centre, up to 3.
 
 All three defect types live in one material, switched by mix factors, so changing type does not recompile shaders. The material has 3 fixed centre slots; unused slots get radius 0.
