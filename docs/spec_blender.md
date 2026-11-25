@@ -45,22 +45,22 @@ EEVEE works in background mode on this Mac, so it is the engine. Cycles stays as
 - Material node graphs are built once per grade. Each image changes only input values, never the node layout. Changing the layout makes EEVEE recompile shaders (about 6 s each), which would multiply render time by about 15.
 - Do not train and render at the same time. Either alone fits in 8 GB; both together will swap.
 
-**Estimated time.** The full scene has more nodes and samples than the benchmark, so I estimate 0.6 to 1.0 s per image, about 1 s to be safe, plus about 7 s of start-up per chunk. A fanless M1 Air may throttle on long runs and be 20 to 30% slower.
+**Measured time (Step 2.1).** The Step 2.1 scene was timed with 20 renders in one Blender process, changing hue and rotation each time. It took 0.48 s per image on average (max 0.53 s), with a peak memory of 460 MB. Step 2.2 adds defect nodes, so I plan on about 0.6 s per image, plus a few seconds of start-up per chunk. A fanless M1 Air may throttle on long runs and be 20 to 30% slower.
 
-| Images | Estimate |
+| Images | Estimate at 0.6 s per image |
 |---|---|
-| 3,000 (1,000 per grade, one setting) | about 50 min |
-| 9,000 (3,000 per grade, one setting) | about 2.5 h |
-| Both narrow and wide at 1,000 per grade | about 1.7 h |
-| Both narrow and wide at 3,000 per grade | about 5 h |
+| 3,000 (1,000 per grade, one setting) | about 30 min |
+| 9,000 (3,000 per grade, one setting) | about 1.5 h |
+| Both narrow and wide at 1,000 per grade | about 1 h |
+| Both narrow and wide at 3,000 per grade | about 3 h |
 
-Step 2.1 will time 20 real renders and replace these estimates with measured ones.
+Renders are deterministic up to GPU float noise. Two runs of the same parameters differed in 42 of 50,176 pixels, by at most 2 of 255 levels.
 
 **Disk:** JPEG at quality 95 is about 20 KB per image (about 400 MB for 18,000). PNG would be about 100 KB.
 
 ## 4. Step 2.1: Render one orange
 
-`blender/generate.py`, run as `blender -b -P blender/generate.py -- --config blender/config.yaml`.
+`blender/generate.py`, run as `blender -b -P blender/generate.py -- --out data/synthetic/step2_1_fresh.jpg`. Step 2.4 adds `--labels` (D1).
 
 Scene:
 - **Fruit:** UV sphere, radius 1, z-scale about 0.9 (slight squash), subdivision 2. A Displace modifier with a low-frequency noise texture makes the shape slightly lumpy.
@@ -68,7 +68,7 @@ Scene:
   - Base colour comes from an HSV value, so hue is one number we can sample.
   - Roughness about 0.4 for the waxy shine.
   - A Voronoi texture drives a Bump node for the oil-gland pitting.
-  - A small dark disk at one pole stands in for the stem or calyx (see D6).
+  - A low raised dome at one pole stands in for the stem or calyx (see D6). It is about 4 to 8 px wide at 224 px, its colour is sampled per image from olive green to dark brown (`stem_mix`), and noise mottling and bump make it read as a scar, not a hole.
 - **Ground:** plane under the fruit, dark grey belt material by default.
 - **Light:** one area light above and to the side.
 - **Camera:** looking straight down, framed so the fruit fills about 70% of the image.
