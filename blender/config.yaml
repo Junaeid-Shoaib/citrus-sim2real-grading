@@ -70,6 +70,8 @@ narrow:
     azimuth: 0
     fill: 0.85                             # median real fruit covers ~57% of pixels, i.e. ~85% of the width
     shift: [0.0, 0.0]
+    saturation_boost: 1.0                  # no camera processing: keeps the narrow colour calibration
+    contrast_boost: 1.0
   background:                              # D4(b): light surface only, no texture
     types: {light: 1.0}
     light: {hue: [0.0, 1.0], saturation: [0.0, 0.03], value: [0.85, 0.95]}
@@ -116,6 +118,11 @@ wide:
     azimuth: [0, 360]
     fill: [0.55, 1.0]
     shift: [-0.08, 0.08]                   # each of x and y
+    # Phone-camera colour processing, applied after rendering (src/camera_process.py), same for all
+    # grades. Real photos have very saturated pixels the renders could not reach (pilot 4 saturation
+    # coverage 28-75%).
+    saturation_boost: [1.0, 1.25]
+    contrast_boost: [1.0, 1.15]
   background:
     # Weights reflect the real train photos: mostly white or light grey, some worktop or cloth.
     # Dark belt and random colours are there to make the background clearly not a cue.

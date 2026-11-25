@@ -135,6 +135,7 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 | Light colour temperature | 5500 K | 3500 to 7500 K |
 | Light position | fixed | random on a hemisphere above, within 70 degrees of the camera direction (never backlit) |
 | Fill light | none | weak neutral-white light at the camera, 0.25 of the key's light on the fruit |
+| Camera colour processing (after rendering) | none | contrast and saturation boost per image, same ranges for all grades |
 | Camera | top-down, fixed distance | tilt 0 to 60 degrees, distance so fruit fills 55 to 100% of the frame, small off-centre shift |
 | Fruit rotation | random (free, costs nothing) | random |
 | Background | light surface only: plain white to light grey, small brightness range, no texture | dark belt, white, light grey, beige, procedural speckle or noise textures, random colour |
@@ -142,6 +143,8 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 Fruit rotation is random in both settings because a fixed pose would make the narrow set unrealistically easy to tell apart.
 
 Resting pose: see D3.
+
+**Camera colour processing (Step 2.4 pilots):** real photos contain very saturated pixels that the renders cannot reach; pilot 4 saturation coverage was 28% (defective), 53% (fresh) and 75% (green). A per-image contrast then saturation boost, like a phone camera's processing, is applied after rendering in Python. It is sampled the same way for all grades and is wide only, so the narrow calibration stays valid. `cam_saturation` and `cam_contrast` are drawn last in the sampler, so adding them left every render unchanged. A one-sided boost (saturation 1.0 to 1.25, contrast 1.0 to 1.15) raised defective coverage to 94% but shifted fresh and green up as a whole (fresh 78%, green 44%), so the boost is made two-sided.
 
 **Lighting decisions from the Step 2.4 wide pilots:**
 - **Key light within 70 degrees of the camera direction.** With light and camera azimuth drawn independently, the key light was often behind the fruit from the camera's view and the visible face was in shadow. Wide renders came out at about 0.7x the real brightness for every grade. The real photos are lit from the camera side. The sampler draws the camera first, then redraws the key light direction until it is within 70 degrees.
@@ -163,7 +166,8 @@ Resting pose: see D3.
 ## 7. Step 2.4: Batch generation
 
 - First `uv run python src/make_scene_params.py --config blender/config.yaml --randomisation wide --n-per-grade 1000 --seed 42` samples every image's parameters and writes `labels.csv` and the splits (D1). No rendering happens here.
-- Then `blender -b -P blender/generate.py -- --labels data/synthetic/wide/labels.csv --start 0 --count 500` renders those rows. A small shell loop runs the chunks.
+- Then `blender -b -P blender/generate.py -- --labels data/synthetic/wide/labels.csv --start 0 --count 500` renders those rows to their `render_path` (under `renders/`). A small shell loop runs the chunks.
+- Then `uv run python src/camera_process.py --labels data/synthetic/wide/labels.csv` applies each row's `cam_contrast` and `cam_saturation` and writes the final image to `path`. Narrow has both at 1.0, so it is a plain copy. Both steps skip finished files, so either can be re-run after an interruption, and the processing is never applied twice.
 - **Output folder:** `data/synthetic/<randomisation>/<grade>/<grade>_<index>.jpg`. Narrow and wide stay apart so Step 3.2 can train on either.
 - **Seeds:** image `i` uses `random.Random(seed * 1_000_000 + i)`. Any single image can be re-rendered exactly, and chunks give the same result whatever order they run in.
 - **`labels.csv`** in `data/synthetic/<randomisation>/`, one row per image.

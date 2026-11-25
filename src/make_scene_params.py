@@ -146,6 +146,11 @@ def sample_params(grade, rng, cfg, defect_type=None):
     params["bg_pattern"] = pick(rng, bg["patterns"])
     params["bg_pattern_strength"] = draw(rng, bg["pattern_strength"]) if params["bg_pattern"] != "plain" else 0.0
     params["bg_pattern_scale"] = draw(rng, bg["pattern_scale"])
+
+    # Camera colour processing, applied after rendering by src/camera_process.py. Drawn last so
+    # adding it left every earlier draw (and so every render) unchanged.
+    params["cam_saturation"] = draw(rng, camera["saturation_boost"])
+    params["cam_contrast"] = draw(rng, camera["contrast_boost"])
     return params
 
 
@@ -159,14 +164,16 @@ def make_labels(cfg, n_per_grade, seed, out_dir):
             # Defect types cycle so the three are exactly balanced within the defective grade
             kind = cfg["defect_types"][j % len(cfg["defect_types"])] if grade == "defective" else None
             params = sample_params(grade, random.Random(image_seed), cfg, defect_type=kind)
-            path = out_dir / grade / f"{grade}_{index:05d}.jpg"
-            rows.append({"path": str(path), "seed": image_seed, **params})
+            name = f"{grade}_{index:05d}.jpg"
+            # Blender writes the raw render; camera_process.py writes the final image the model sees
+            rows.append({"path": str(out_dir / grade / name), "render_path": str(out_dir / "renders" / grade / name),
+                         "seed": image_seed, **params})
             index += 1
     df = pd.DataFrame(rows)
     for column in JSON_COLUMNS:
         df[column] = df[column].map(json.dumps)
     # path, grade and defect_type first, then every sampled parameter
-    first = ["path", "grade", "defect_type", "seed"]
+    first = ["path", "grade", "defect_type", "seed", "render_path"]
     return df[first + [c for c in df.columns if c not in first]]
 
 

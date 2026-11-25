@@ -671,7 +671,7 @@ def render(scene, out_path):
 
 # labels.csv stores these as JSON text because they are lists or tuples
 JSON_COLUMNS = ["pattern_offset", "rotation", "light_location", "camera_shift", "bg_colour", "patches"]
-TEXT_COLUMNS = ["path", "grade", "defect_type", "randomisation", "bg_type", "bg_pattern"]
+TEXT_COLUMNS = ["path", "render_path", "grade", "defect_type", "randomisation", "bg_type", "bg_pattern"]
 
 
 def row_to_params(row):
@@ -712,7 +712,8 @@ def main():
         rows = list(csv.DictReader(f))[args.start:args.start + args.count]
     rendered, skipped, total = 0, 0, 0.0
     for row in rows:
-        out_path = os.path.abspath(row["path"])
+        # Raw render; src/camera_process.py turns it into the final image at row["path"]
+        out_path = os.path.abspath(row["render_path"])
         # Skip finished images so a crashed or interrupted chunk can simply be re-run
         if os.path.exists(out_path):
             skipped += 1
