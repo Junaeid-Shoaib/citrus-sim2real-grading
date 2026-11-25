@@ -1,16 +1,26 @@
-"""Stage 3 summary across runs: one table, the real-fraction plot, and the section 9 difference rule.
+"""Stage 3 summary across runs: one table, the real-fraction plot, the section 9 difference rule,
+and a Grad-CAM comparison of four models on the same real val images.
 
-Reads only experiments.csv and the saved test predictions CSVs, never the test images.
+Reads experiments.csv and the saved test predictions CSVs, never the test images. The Grad-CAM
+comparison uses real val images only, so the test set is still read only by evaluate.py.
 """
 
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
+from PIL import Image
+
+from dataset import GRADES, IMAGENET_MEAN, IMAGENET_STD, eval_transform
+from evaluate import grad_cam
+from model import build_model, get_device
 
 RESULTS = Path("results")
 UPPER_BOUND_RUN = "real_lrb1e-4"
 CEILING = 0.97  # above this, differences come down to a handful of images, so report error counts
+# Columns of the Grad-CAM comparison, fixed in the spec (S7) before any 3.3 result
+GRADCAM_RUNS = ["real_lrb1e-4", "synth_narrow_s42", "synth_wide_s42", "mixed_wide_5_s42"]
 
 
 def arm(run_id):
@@ -52,14 +62,16 @@ def compare(table, arm_a, arm_b, noise):
 
 
 def plot_real_fraction(table, out_path):
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for source, label in (("mixed_wide", "synthetic wide + real"), ("real", "real only")):
+    fig, (ax, ax_zoom) = plt.subplots(1, 2, figsize=(11, 4))
+    for source, label, shift in (("mixed_wide", "synthetic wide + real", -0.3), ("real", "real only", 0.3)):
         stats = [table.loc[table["arm"] == f"{source}_{pct}", "test_acc"].agg(["mean", "min", "max"])
                  for pct in (5, 10, 25)]
         means = [s["mean"] for s in stats]
         # Error bars show the seed range (only the 5% points have 3 seeds)
         err = [[s["mean"] - s["min"] for s in stats], [s["max"] - s["mean"] for s in stats]]
         ax.errorbar([5, 10, 25], means, yerr=err, marker="o", capsize=4, label=label)
+        # Zoomed copy; a small sideways shift stops the two 5% bars hiding each other
+        ax_zoom.errorbar([5 + shift, 10 + shift, 25 + shift], means, yerr=err, marker="o", capsize=4, label=label)
     synth = table.loc[table["arm"] == "synth_wide", "test_acc"]
     ax.errorbar([0], [synth.mean()], yerr=[[synth.mean() - synth.min()], [synth.max() - synth.mean()]],
                 marker="s", color="grey", capsize=4, linestyle="none", label="synthetic wide only (3 seeds)")
@@ -70,8 +82,51 @@ def plot_real_fraction(table, out_path):
     ax.set_xticks([0, 5, 10, 25])
     ax.set_ylim(0, 1.02)
     ax.legend(loc="lower right", fontsize=8)
+    ax_zoom.set_xlabel("real train used (%)")
+    ax_zoom.set_ylabel("real test accuracy")
+    ax_zoom.set_xticks([5, 10, 25])
+    ax_zoom.set_ylim(0.96, 1.0)
+    ax_zoom.set_title("Zoom: real only vs synthetic wide + real", fontsize=10)
+    ax_zoom.legend(loc="lower right", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=80)
+    plt.close(fig)
+
+
+def pick_gradcam_images(val_csv, seed):
+    """S7 rule: one real val image per source class, plus one more fresh and one more green (7 in all)."""
+    val = pd.read_csv(val_csv)
+    extra = {"fresh_orange": 2, "green_orange": 2}
+    return pd.concat([val[val["source_class"] == c].sample(extra.get(c, 1), random_state=seed)
+                      for c in sorted(val["source_class"].unique())])
+
+
+def save_gradcam_compare(images, device, out_path):
+    transform = eval_transform()
+    mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+    std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    fig, axes = plt.subplots(len(images), len(GRADCAM_RUNS), figsize=(2.4 * len(GRADCAM_RUNS), 2.4 * len(images)))
+    for col, run_id in enumerate(GRADCAM_RUNS):
+        model = build_model()
+        model.load_state_dict(torch.load(f"checkpoints/{run_id}.pt", map_location="cpu")["model_state"])
+        model.to(device).eval()
+        for row, (_, item) in enumerate(images.iterrows()):
+            image = transform(Image.open(item["path"]).convert("RGB")).to(device)
+            with torch.no_grad():
+                pred = model(image.unsqueeze(0)).argmax(1).item()
+            # Heatmap for the model's own prediction, as in evaluate.py
+            cam = grad_cam(model, image, pred)
+            ax = axes[row, col]
+            ax.imshow((image.cpu() * std + mean).clamp(0, 1).permute(1, 2, 0))
+            ax.imshow(cam, cmap="jet", alpha=0.4)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f"{item['source_class'].replace('_orange', '')} / {GRADES[pred]}", fontsize=13)
+            if row == 0:
+                ax.set_title(f"{run_id}\n{ax.get_title()}", fontsize=13)
+    fig.suptitle("Grad-CAM on real val (true source class / predicted grade)", fontsize=16)
+    fig.tight_layout(rect=(0, 0, 1, 0.98))  # leaves room for the suptitle
+    fig.savefig(out_path, dpi=48)  # 28 heatmaps compress badly, so a lower dpi keeps the tracked PNG small
     plt.close(fig)
 
 
@@ -93,6 +148,12 @@ def main():
 
     plot_real_fraction(table, RESULTS / "real_fraction.png")
     print(f"\nSaved {RESULTS / 'stage3_summary.csv'} and {RESULTS / 'real_fraction.png'}")
+
+    images = pick_gradcam_images("data/real/splits/val.csv", seed=42)
+    print("\nGrad-CAM comparison images (real val, S7 rule, seed 42):")
+    print(images[["path", "source_class"]].to_string(index=False))
+    save_gradcam_compare(images, get_device(), RESULTS / "gradcam_compare.png")
+    print(f"Saved {RESULTS / 'gradcam_compare.png'}")
 
 
 if __name__ == "__main__":

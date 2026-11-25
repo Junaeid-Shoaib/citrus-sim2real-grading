@@ -111,7 +111,7 @@ Amendment (2026-11-25, after 3.2, before any 3.3 run): 3.2 showed a synthetic-on
 
 **S6. Real-only controls for 3.3.** (a) Mixed runs only, as written in CLAUDE.md. (b) Add real-only runs at 5%, 10% and 25%, on the same subsets as the mixed runs. Recommend (b): Stage 1 reached 0.98 real val after phase A alone, so a few hundred real images may already score near the upper bound. Without the control, a high mixed score cannot be credited to the synthetic data. It costs 3 short runs (about 10 min).
 
-**S7. Images for the Grad-CAM comparison.** (a) Fixed real val images. (b) Real test images. Recommend (a): 1 image per source class plus 1 more fresh and green (7 images), chosen by seed before any Stage 3 run. That keeps the test set read only by evaluate.py, and each run's evaluate.py still writes its own Grad-CAM on test images.
+**S7. Images for the Grad-CAM comparison.** (a) Fixed real val images. (b) Real test images. Recommend (a): 1 image per source class plus 1 more fresh and green (7 images), chosen by seed before any Stage 3 run. In practice the 7 images were drawn at Step 3.4 (2026-11-25) by this rule with seed 42 in `compare_runs.py`, not chosen by looking at them. That keeps the test set read only by evaluate.py, and each run's evaluate.py still writes its own Grad-CAM on test images.
 
 ## 11. Estimated training time (M1, 8 GB)
 
