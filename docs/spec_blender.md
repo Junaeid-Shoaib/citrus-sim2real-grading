@@ -87,13 +87,15 @@ A `sample_params(grade, rng, cfg)` function returns a dict of numbers. A `apply_
 | defective | per defect type, from the matching real class (D5): blackspot orange, canker yellow-olive, rot orange to yellow | one defect type plus a global shift |
 
 Defect types (one per defective image, chosen evenly):
-- **spots:** 3 to 30 small dark brown or black spots from a thresholded Voronoi texture, plus a darker bump in the spot. Matches blackspotted.
+- **spots:** 3 to 30 small dark brown or black spots from a thresholded Voronoi texture, plus a darker bump in the spot, on a shrivelled peel: a `wrinkle` parameter adds sunken creases (ridged noise, bump only). Matches blackspotted, which is wrinkled in the real images, not smooth.
 - **lesions (canker):** many small, raised, irregular light-brown corky marks over the visible face, on a dull yellow-olive base. It uses the same masked Voronoi cells as spots, with the cells distorted by noise, a corky mottled colour, and raised instead of sunken. 11 of 12 real cankered train images look like this; only one showed a few medium patches, and none had the bright yellow halo, so the large-lesion look was dropped.
+  - A large-scale noise mask makes the marks cluster unevenly; `canker_density` (per image) sets how much of the face keeps marks. Without it the cells read as a regular polka-dot grid.
+  - A yellow-brown scabby mottle (sRGB 0.60, 0.50, 0.25) and rough bump cover the whole fruit, because real canker reads as a rough mottled peel at 224 px, not as separate dots. A grey-tan scab (0.55, 0.50, 0.36) cut canker saturation to 0.70; the yellow-brown one gives 0.74, still below the real 0.78 to 0.87. That is left to be judged on the Step 2.4 histograms.
 - **rot:** one or two patches, matched to the real rotten train images.
   - Soft, irregular edge distorted by low-frequency noise.
   - Inside: dark-brown to olive-brown, matte, sunken.
   - A slightly sunken, darker, glossier water-soaked rim just outside the patch.
-  - Optional mould that grows out from the patch centre: white at its margin, muted grey-green toward the middle. With mould_amount 0 there is no mould, which is the most common look in the real images.
+  - Optional mould that grows out from the patch centre: white at its margin, muted grey-green toward the middle, thinned by fine noise so it looks powdery. With mould_amount 0 there is no mould, which is the most common look in the real images. Known limit: see section 9.
 
 Global shift for every defective image, sampled not fixed:
 - Darker: value x (1 - shift_dark).
@@ -139,6 +141,11 @@ Every random value is a `[min, max]` range in `config.yaml`. Two blocks, `narrow
 Fruit rotation is random in both settings because a fixed pose would make the narrow set unrealistically easy to tell apart.
 
 Resting pose: see D3.
+
+**Decisions from Step 2.3 renders:**
+- **Green hue:** wide green material hue is 0.145 to 0.205. At 0.14 the floor rendered at hue 0.133, below the real 5th percentile (0.137).
+- **Dark greens are kept as hard examples.** Weak light can render a green fruit darker (about 0.31) than any real green (about 0.38 minimum), so it reads brown-olive. No green-only brightness floor is added: lighting is sampled the same for every grade, and a class-specific floor would create a "dark means not green" shortcut.
+- **Light colour temperature stays at 4500 to 8500 K in wide.** A brown-olive wide green was tested at its sampled 5315 K and at 6500 K: the rendered hue was the same (0.133), so warm light was not the cause.
 
 **Notes from Step 2.2 for the ranges:**
 - **Mould frequency:** in 12 real rotten train images, only 2 showed mould, and those had heavy mould; the rest had a bare sunken patch. The sampler should give most rot images mould_amount 0, and the rest a high amount, rather than spreading mould_amount evenly across all rot.
@@ -254,6 +261,7 @@ CLAUDE.md says to check for near-duplicates before training.
 - The peel, defects and lighting are procedural approximations, not measured from real fruit.
 - The resting pose is placed, not simulated (D3a). Even a rigid-body drop would not be DEM.
 - Neither setting models a real grading machine. Narrow is matched to the look of the real photos (light background), and the dark belt appears only as one option in wide.
+- Mould stays inside the rot patch and ends at a fairly sharp edge. Real mould (2 of 12 sampled rotten train images) spreads over up to half the fruit with a soft white fringe. The synthetic mould is powdery inside but does not reproduce that spread.
 
 ## 10. Out of scope for Stage 2
 

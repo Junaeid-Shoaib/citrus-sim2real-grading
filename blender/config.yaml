@@ -53,9 +53,9 @@ narrow:
     bump_strength: [0.28, 0.32]
     roughness: [0.38, 0.42]
   defects:                                 # middle of the wide ranges
-    spots:   {scale: [4.0, 4.5], radius: [0.03, 0.035]}
-    lesions: {scale: [7.5, 8.5], radius: [0.02, 0.024], distort: 0.035}
-    rot:     {count: [1, 1], radius: [0.4, 0.45]}
+    spots:   {scale: [4.0, 4.5], radius: [0.03, 0.035], wrinkle: [0.6, 0.8]}
+    lesions: {scale: [8.5, 9.5], radius: [0.038, 0.044], distort: 0.06, wrinkle: [0.15, 0.25], density: [0.55, 0.65]}
+    rot:     {count: [1, 1], radius: [0.4, 0.45], wrinkle: [0.05, 0.15]}
   light:
     energy: 400
     elevation: 70                          # degrees above the ground
@@ -78,7 +78,7 @@ wide:
   grades:
     fresh:     {hue: [0.082, 0.109], saturation: [0.86, 1.0], value: [0.52, 0.92],
                 blotch_hue_offset: [-0.01, 0.02], blotch_amount: [0.0, 0.3]}
-    green:     {hue: [0.14, 0.2], saturation: [0.9, 1.0], value: [0.34, 0.45],
+    green:     {hue: [0.145, 0.205], saturation: [0.9, 1.0], value: [0.34, 0.45],
                 blotch_hue_offset: [-0.07, -0.03], blotch_amount: [0.0, 0.6]}
     defective:
       spots:   {hue: [0.089, 0.129], saturation: [0.86, 1.0], value: [0.42, 0.82],
@@ -94,10 +94,12 @@ wide:
     bump_strength: [0.15, 0.5]
     roughness: [0.25, 0.55]
   defects:
-    spots:   {scale: [3.0, 5.5], radius: [0.02, 0.045]}    # about 5 to 30 visible black spots
-    # Canker: many small, irregular, raised corky marks (11 of 12 real cankered train images)
-    lesions: {scale: [6.0, 10.0], radius: [0.015, 0.03], distort: [0.02, 0.05]}
-    rot:     {count: [1, 2], radius: [0.25, 0.6]}           # generate.py asserts radius <= 0.7
+    # Blackspot: about 5 to 30 visible black spots on a shrivelled, creased peel
+    spots:   {scale: [3.0, 5.5], radius: [0.02, 0.045], wrinkle: [0.4, 1.0]}
+    # Canker: many irregular, raised corky marks on a scabby peel (11 of 12 real cankered train images)
+    lesions: {scale: [7.0, 12.0], radius: [0.03, 0.055], distort: [0.04, 0.08], wrinkle: [0.0, 0.4],
+             density: [0.3, 1.0]}   # share of the face where marks cluster; varies per image
+    rot:     {count: [1, 2], radius: [0.25, 0.6], wrinkle: [0.0, 0.3]}   # generate.py asserts radius <= 0.7
   light:
     energy: [200, 800]
     elevation: [30, 80]

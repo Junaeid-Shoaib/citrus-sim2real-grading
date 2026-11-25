@@ -45,6 +45,8 @@ def sample_defect(rng, cfg, kind):
               "shift_dull": draw(rng, cfg["shift_dull"]),
               "shift_rough": draw(rng, cfg["shift_rough"])}
     settings = cfg["defects"][kind]
+    params["wrinkle"] = draw(rng, settings.get("wrinkle", 0.0))
+    params["canker_density"] = draw(rng, settings.get("density", 0.5))
     if kind in ("spots", "lesions"):
         # Black spots and canker marks share the spot machinery in generate.py
         params["spot_scale"] = draw(rng, settings["scale"])
@@ -93,7 +95,7 @@ def sample_params(grade, rng, cfg, defect_type=None):
         "roughness": draw(rng, shape["roughness"]),
         # No defect and no shift unless the grade is defective
         "defect_type": "none", "shift_dark": 0.0, "shift_dull": 0.0, "shift_rough": 0.0,
-        "spot_scale": 4.0, "spot_radius": 0.03, "spot_distort": 0.0, "patches": [],
+        "spot_scale": 4.0, "spot_radius": 0.03, "spot_distort": 0.0, "wrinkle": 0.0, "canker_density": 0.5, "patches": [],
         "mould_amount": 0.0, "mould_mix": 0.0,
     }
     if grade == "defective":

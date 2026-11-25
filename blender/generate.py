@@ -41,6 +41,8 @@ DEFAULT_PARAMS = {
     "spot_scale": 4.0,        # Voronoi cells per unit; about 3 gives ~5 visible spots, 5.5 gives ~30
     "spot_radius": 0.03,      # spot radius in fruit-radius units (about 2 px at 224 px)
     "spot_distort": 0.0,      # canker: noise distortion of the cells so marks are irregular, not round
+    "wrinkle": 0.0,           # depth of shrivelled creases in the peel (defective only; strongest for blackspot)
+    "canker_density": 0.5,    # canker: share of the visible face where marks cluster (0 to 1)
     # Rot patches: (degrees from the view direction, azimuth degrees, radius); up to 3, radius at most MAX_PATCH_RADIUS
     "patches": [],
     "mould_amount": 0.0,      # rot only: how much of the patch is covered in mould
@@ -71,6 +73,7 @@ STEM_BROWN = (0.20, 0.12, 0.05)
 # Defect colours (sRGB), matched by eye to the real defective train images
 SPOT_COLOUR = (0.10, 0.07, 0.04)          # blackspot: near-black pits
 CANKER_COLOUR = (0.42, 0.30, 0.16)        # canker: light-brown corky marks
+SCAB_COLOUR = (0.60, 0.50, 0.25)          # canker: yellow-brown scabby mottle (the grey-tan 0.55, 0.50, 0.36 cut saturation to 0.70)
 # Rot and mould colours start from real rotten train images (10x10 px averages), adjusted so renders match
 ROT_DARK = (0.26, 0.15, 0.03)             # dark brown patch
 ROT_OLIVE = (0.45, 0.33, 0.15)            # olive-brown patch (more saturated than measured: renders came out grey)
@@ -248,10 +251,43 @@ def make_peel_material():
     cap = math_op(nodes, links, "GREATER_THAN", facing.outputs["Value"], 0.5)
     marks = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", marks, cap),
                     math_op(nodes, links, "ADD", spots_on, lesions_on))
+    # Canker marks cluster unevenly: a large-scale noise mask thins them in some areas, so the
+    # cells do not read as a regular polka-dot grid. canker_density sets how much area keeps marks.
+    cluster_noise = nodes.new("ShaderNodeTexNoise")
+    cluster_noise.inputs["Scale"].default_value = 1.5
+    links.new(shifted, cluster_noise.inputs["Vector"])
+    cluster = map_range(nodes, links, cluster_noise.outputs["Fac"], "canker_cluster")
+    # Blackspot is unaffected: mask = 1 - lesions_on x (1 - cluster)
+    keep = math_op(nodes, links, "SUBTRACT", 1.0,
+                   math_op(nodes, links, "MULTIPLY", lesions_on, math_op(nodes, links, "SUBTRACT", 1.0, cluster)))
+    marks = math_op(nodes, links, "MULTIPLY", marks, keep)
     cork_colour = mix_colour(nodes, links, linear_rgba(CANKER_COLOUR),
                              linear_rgba(tuple(c * 0.5 for c in CANKER_COLOUR)), cork_noise.outputs["Fac"])
     mark_colour = mix_colour(nodes, links, linear_rgba(SPOT_COLOUR), cork_colour, lesions_on)
     colour = mix_colour(nodes, links, colour, mark_colour, marks)
+
+    # Canker also roughens the whole peel: a scabby grey-tan mottle, not only separate marks.
+    # Real cankered fruit reads as a rough mottled surface at 224 px; dots alone did not.
+    scab_noise = nodes.new("ShaderNodeTexNoise")
+    scab_noise.inputs["Scale"].default_value = 14.0
+    scab_noise.inputs["Detail"].default_value = 6.0
+    links.new(shifted, scab_noise.inputs["Vector"])
+    scab = map_range(nodes, links, scab_noise.outputs["Fac"], "scab_edges")
+    scab.node.inputs["From Min"].default_value = 0.5
+    scab.node.inputs["From Max"].default_value = 0.7
+    scab = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", scab, lesions_on), 0.6)
+    colour = mix_colour(nodes, links, colour, linear_rgba(SCAB_COLOUR), scab)
+
+    # Shrivelled creases: ridged noise (1 - |2n - 1|, sharpened) gives thin connected lines
+    wrinkle_noise = nodes.new("ShaderNodeTexNoise")
+    wrinkle_noise.inputs["Scale"].default_value = 4.0
+    wrinkle_noise.inputs["Detail"].default_value = 3.0
+    wrinkle_noise.inputs["Distortion"].default_value = 1.0
+    links.new(shifted, wrinkle_noise.inputs["Vector"])
+    ridge = math_op(nodes, links, "ABSOLUTE",
+                    math_op(nodes, links, "SUBTRACT", math_op(nodes, links, "MULTIPLY", wrinkle_noise.outputs["Fac"], 2.0), 1.0))
+    ridge = math_op(nodes, links, "POWER", math_op(nodes, links, "SUBTRACT", 1.0, ridge), 6.0)
+    creases = math_op(nodes, links, "MULTIPLY", ridge, named(nodes, "ShaderNodeValue", "wrinkle").outputs[0])
 
     # Rot patches: distance from each centre, roughened by noise so edges are irregular
     edge_noise = nodes.new("ShaderNodeTexNoise")
@@ -295,6 +331,17 @@ def make_peel_material():
                           math_op(nodes, links, "MULTIPLY",
                                   math_op(nodes, links, "SUBTRACT", mould_noise.outputs["Fac"], 0.5), 0.5))
     mould = math_op(nodes, links, "MULTIPLY", map_range(nodes, links, mould_field, "mould_edges"), rot_on)
+    # Powdery look: fine noise thins the mould everywhere, so the patch shows through in places
+    # and the wide soft edge fades out unevenly instead of ending like a flat decal
+    powder_noise = nodes.new("ShaderNodeTexNoise")
+    powder_noise.inputs["Scale"].default_value = 40.0
+    powder_noise.inputs["Detail"].default_value = 4.0
+    links.new(shifted, powder_noise.inputs["Vector"])
+    powder = map_range(nodes, links, powder_noise.outputs["Fac"], "powder")
+    powder.node.inputs["From Min"].default_value = 0.3
+    powder.node.inputs["From Max"].default_value = 0.65
+    powder.node.inputs["To Min"].default_value = 0.35
+    mould = math_op(nodes, links, "MULTIPLY", mould, powder)
     spores = map_range(nodes, links, mould_field, "mould_centre_edges")
     spores = math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", spores, mould),
                      named(nodes, "ShaderNodeValue", "mould_mix").outputs[0])
@@ -304,7 +351,8 @@ def make_peel_material():
 
     # Rot, mould and corky canker are matte, the wet rim is glossy; the rest of the peel keeps its sampled roughness
     canker = math_op(nodes, links, "MULTIPLY", marks, lesions_on)
-    matte = math_op(nodes, links, "MAXIMUM", math_op(nodes, links, "MAXIMUM", rot, mould), canker)
+    matte = math_op(nodes, links, "MAXIMUM", math_op(nodes, links, "MAXIMUM", rot, mould),
+                    math_op(nodes, links, "MAXIMUM", canker, scab))
     roughness = map_range(nodes, links, matte, "roughness")
     roughness.node.interpolation_type = "LINEAR"
     roughness.node.inputs["To Max"].default_value = 0.9
@@ -322,6 +370,11 @@ def make_peel_material():
     height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", rim, 0.3))
     black_spots = math_op(nodes, links, "MULTIPLY", marks, spots_on)
     height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", black_spots, 0.5))
+    # Scab relief over the canker peel, sunken creases, and a little fluffy relief in the mould
+    height = math_op(nodes, links, "ADD", height,
+                     math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", scab_noise.outputs["Fac"], lesions_on), 0.8))
+    height = math_op(nodes, links, "SUBTRACT", height, math_op(nodes, links, "MULTIPLY", creases, 3.0))
+    height = math_op(nodes, links, "ADD", height, math_op(nodes, links, "MULTIPLY", math_op(nodes, links, "MULTIPLY", mould, powder_noise.outputs["Fac"]), 0.6))
     bump = named(nodes, "ShaderNodeBump", "pit_bump")
     # Height is mostly Voronoi distance (0 to ~0.7); the 0.001 default made pits about 1000x too shallow to see
     bump.inputs["Distance"].default_value = 0.02
@@ -559,6 +612,11 @@ def apply_peel(fruit, camera, params):
     nodes["spot_edges"].inputs["From Min"].default_value = edge
     nodes["spot_edges"].inputs["From Max"].default_value = edge * 0.6
     nodes["spot_distort"].outputs[0].default_value = params["spot_distort"]
+    nodes["wrinkle"].outputs[0].default_value = params["wrinkle"]
+    # Higher density lowers the threshold on the cluster noise (noise Fac sits mostly in 0.3-0.7)
+    cluster_edge = 0.7 - 0.4 * params["canker_density"]
+    nodes["canker_cluster"].inputs["From Min"].default_value = cluster_edge
+    nodes["canker_cluster"].inputs["From Max"].default_value = cluster_edge + 0.1
 
     for i in range(MAX_PATCHES):
         if i < len(params["patches"]):
@@ -577,7 +635,7 @@ def apply_peel(fruit, camera, params):
     # same field, so the grey-green sits inside a white margin.
     mould_edge = 1.3 - 0.8 * params["mould_amount"]  # field peaks at 1.25, so amount 0 gives no mould
     nodes["mould_edges"].inputs["From Min"].default_value = mould_edge
-    nodes["mould_edges"].inputs["From Max"].default_value = mould_edge + 0.3  # soft, fluffy margin
+    nodes["mould_edges"].inputs["From Max"].default_value = mould_edge + 0.6  # wide, soft margin; 0.3 still ended like a decal
     nodes["mould_centre_edges"].inputs["From Min"].default_value = mould_edge + 0.35
     nodes["mould_centre_edges"].inputs["From Max"].default_value = mould_edge + 0.55
     nodes["mould_mix"].outputs[0].default_value = params["mould_mix"]
