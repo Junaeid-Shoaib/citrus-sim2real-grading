@@ -50,7 +50,7 @@ The experiments.csv `val_acc` column holds real val accuracy at the saved checkp
 
 ## 7. Step 3.3: Mixed training
 
-**Definition: pretrain on wide synthetic, then fine-tune on a real subset.** The mixed run starts from the finished `synth_wide_s42` checkpoint from 3.1 and trains on the real subset only, with the same two-phase recipe, epochs and checkpoint rule (S1, S2). The 3-grade head is kept, not re-initialised, because it already maps to the same grades.
+**Definition: pretrain on wide synthetic, then fine-tune on a real subset.** The mixed run starts from the finished `synth_wide_s42` checkpoint from 3.1 (at 5%, seed N starts from `synth_wide_sN`, see S5) and trains on the real subset only, with the same two-phase recipe, epochs and checkpoint rule (S1, S2). The 3-grade head is kept, not re-initialised, because it already maps to the same grades.
 
 Why sequential, not joint training (synthetic and real shuffled into one set):
 - It pairs exactly with the real-only control (S6). Both runs see the same real images with the same recipe; the only difference is the starting weights: ImageNet for real-only, ImageNet then synthetic for mixed. So any difference is what the synthetic pretraining adds.
@@ -91,7 +91,7 @@ Expected outcomes. They are written down now so the results can be read against 
 
 **What counts as a real difference:**
 - **Narrow vs wide (3 seeds each):** the difference in mean test accuracy must be more than 2x the larger seed range (max minus min) of the two settings, and more than 2 points. The 2-point floor is about 2 binomial standard errors of a test accuracy near 80% on 1,350 images, so a gap smaller than test sampling noise never counts, even if the seeds agree closely.
-- **Mixed vs real-only (one seed each):** there is no seed spread for these runs, so the training noise estimate is the wide synthetic-only seed range. The difference must be more than 2x that range and more than 2 points.
+- **Mixed vs real-only (amended 2026-11-25, before any 3.3 run, see S5):** at 5%, both have seeds 42, 43 and 44. The difference in mean test accuracy must be more than 2x the larger of the two 5% seed ranges and more than 2 points. At 10% and 25% (one seed each), that same larger 5% range is the noise estimate: the difference must be more than 2x it and more than 2 points. The wide synthetic-only range is no longer used here: at 22.2 points it measures noise in runs that never saw a real image, not in runs fine-tuned on real images.
 - **Near the ceiling:** above about 97%, differences come down to a handful of images. There I report error counts (for example 4 against 9 errors out of 1,350) and do not call a difference real unless it passes both rules above.
 - Anything that fails these rules is reported as "no clear difference", with both numbers.
 
@@ -103,9 +103,11 @@ Expected outcomes. They are written down now so the results can be read against 
 
 **S3. Colour jitter.** (a) Same 0.2 brightness, contrast and saturation jitter as Stage 1, for every source. (b) Stronger saturation and contrast jitter (0.3 to 0.4) for synthetic images only. (c) No jitter for synthetic. Recommend (a): one transform for all runs keeps the comparison clean, and 0.2 already covers the gap the spec note describes. (b) would make the train transform depend on the data source, which is one more thing that differs between runs.
 
-**S4. Synthetic setting for 3.3 (the pretraining checkpoint).** (a) Wide, fixed now. (b) Whichever of narrow and wide does better in 3.2. (c) Both. Recommend (a): wide is the setting the project is built around. (b) uses test results to make a design choice, which is tuning on test. (c) is honest but adds 3 runs and a second line to every plot. Mixed starts from the seed 42 wide checkpoint.
+**S4. Synthetic setting for 3.3 (the pretraining checkpoint).** (a) Wide, fixed now. (b) Whichever of narrow and wide does better in 3.2. (c) Both. Recommend (a): wide is the setting the project is built around. (b) uses test results to make a design choice, which is tuning on test. (c) is honest but adds 3 runs and a second line to every plot. Mixed starts from the seed 42 wide checkpoint (at 5%, mixed seed N starts from `synth_wide_sN`, see S5).
 
 **S5. Seeds.** (a) One seed (42) for every run. (b) 3 seeds (42, 43, 44) for the 3.1/3.2 synthetic-only runs, one seed for 3.3. Recommend (b): narrow vs wide is the headline comparison, and one seed cannot tell a 2-point difference from noise. It costs 4 extra runs (about 25 min). Same rendered data for every seed, so the spread is training noise only. MPS is not fully deterministic, so even the same seed can differ slightly between reruns.
+
+Amendment (2026-11-25, after 3.2, before any 3.3 run): 3.2 showed a synthetic-only seed spread of 22.2 points, which is not a fair noise estimate for runs fine-tuned on real images. So at 5%, real-only and mixed each get seeds 42, 43 and 44, and mixed seed N starts from `synth_wide_sN`. All six 5% runs use the same 5% subset; the seed changes only initialisation and shuffling. At 10% and 25%, one seed (42) each, as before. The section 9 rule uses the 5% seed ranges.
 
 **S6. Real-only controls for 3.3.** (a) Mixed runs only, as written in CLAUDE.md. (b) Add real-only runs at 5%, 10% and 25%, on the same subsets as the mixed runs. Recommend (b): Stage 1 reached 0.98 real val after phase A alone, so a few hundred real images may already score near the upper bound. Without the control, a high mixed score cannot be credited to the synthetic data. It costs 3 short runs (about 10 min).
 
