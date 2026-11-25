@@ -73,6 +73,8 @@ def plot_history(history, phase_a_epochs, out_path):
         ax.set_xlabel("epoch")
         ax.set_title(title)
         ax.legend()
+    # Log scale so near-zero synthetic loss and large real val loss are both readable on one panel
+    ax_loss.set_yscale("log")
     fig.tight_layout()
     fig.savefig(out_path, dpi=80)
     plt.close(fig)
