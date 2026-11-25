@@ -1,14 +1,25 @@
-"""Sample render parameters for synthetic oranges from blender/config.yaml.
+"""Sample render parameters for synthetic oranges and write labels.csv plus train/val splits.
 
 All randomness for the synthetic data lives here (D1). blender/generate.py only turns a
-parameter dict into an image, so each image's grade is fixed before it is rendered.
-Step 2.4 adds the command line that writes labels.csv and the train/val splits.
+parameter row into an image, so each image's grade is fixed before it is rendered.
+
+    uv run python src/make_scene_params.py --randomisation wide --n-per-grade 1000
 """
 
+import argparse
 import colorsys
+import json
 import math
+import random
+from pathlib import Path
 
+import pandas as pd
 import yaml
+from sklearn.model_selection import train_test_split
+
+GRADES = ["fresh", "green", "defective"]
+# Stored as JSON text in labels.csv because they are lists or tuples
+JSON_COLUMNS = ["pattern_offset", "rotation", "light_location", "camera_shift", "bg_colour", "patches"]
 
 
 def load_config(path, randomisation=None):
@@ -122,3 +133,54 @@ def sample_params(grade, rng, cfg, defect_type=None):
     params["bg_pattern_strength"] = draw(rng, bg["pattern_strength"]) if params["bg_pattern"] != "plain" else 0.0
     params["bg_pattern_scale"] = draw(rng, bg["pattern_scale"])
     return params
+
+
+def make_labels(cfg, n_per_grade, seed, out_dir):
+    rows = []
+    index = 0
+    for grade in GRADES:
+        for j in range(n_per_grade):
+            # One RNG per image, so any single image can be re-sampled on its own
+            image_seed = seed * 1_000_000 + index
+            # Defect types cycle so the three are exactly balanced within the defective grade
+            kind = cfg["defect_types"][j % len(cfg["defect_types"])] if grade == "defective" else None
+            params = sample_params(grade, random.Random(image_seed), cfg, defect_type=kind)
+            path = out_dir / grade / f"{grade}_{index:05d}.jpg"
+            rows.append({"path": str(path), "seed": image_seed, **params})
+            index += 1
+    df = pd.DataFrame(rows)
+    for column in JSON_COLUMNS:
+        df[column] = df[column].map(json.dumps)
+    # path, grade and defect_type first, then every sampled parameter
+    first = ["path", "grade", "defect_type", "seed"]
+    return df[first + [c for c in df.columns if c not in first]]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="blender/config.yaml")
+    parser.add_argument("--randomisation", choices=["narrow", "wide"])
+    parser.add_argument("--n-per-grade", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--out-dir", help="default: data/synthetic/<randomisation>")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config, args.randomisation)
+    out_dir = Path(args.out_dir or f"data/synthetic/{cfg['randomisation']}")
+    labels = make_labels(cfg, args.n_per_grade, args.seed, out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    labels.to_csv(out_dir / "labels.csv", index=False)
+
+    # 85/15 train/val, stratified by grade. No synthetic test split: the test set is always real.
+    train, val = train_test_split(labels, test_size=0.15, stratify=labels["grade"], random_state=args.seed)
+    (out_dir / "splits").mkdir(exist_ok=True)
+    for name, split in (("train", train), ("val", val)):
+        split[["path", "grade", "defect_type"]].to_csv(out_dir / "splits" / f"{name}.csv", index=False)
+
+    print(f"Wrote {len(labels)} rows to {out_dir / 'labels.csv'}")
+    print(pd.crosstab(labels["grade"], labels["defect_type"]).to_string())
+    print(f"Splits: train {len(train)}, val {len(val)}")
+
+
+if __name__ == "__main__":
+    main()

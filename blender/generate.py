@@ -1,16 +1,20 @@
 # pyright: reportMissingModuleSource=false
 """Render a synthetic orange in Blender.
 
-Run headless:
-    blender -b -P blender/generate.py -- --out data/synthetic/step2_1_fresh.jpg
+Run headless, rendering rows of a labels.csv written by src/make_scene_params.py:
+    blender -b -P blender/generate.py -- --labels data/synthetic/wide/labels.csv --start 0 --count 500
 
-All randomness lives outside Blender (src/make_scene_params.py, from Step 2.4).
-This script only turns a dict of parameters into an image, so a render is fully
-determined by its parameters and the label never depends on the image.
+Without --labels it renders one default fresh orange to --out.
+
+All randomness lives outside Blender (src/make_scene_params.py). This script only turns a
+row of parameters into an image, so a render is fully determined by its parameters and the
+label never depends on the image.
 """
 
 import argparse
 import colorsys
+import csv
+import json
 import math
 import os
 import sys
@@ -648,21 +652,61 @@ def render(scene, out_path):
     return time.time() - start
 
 
+# labels.csv stores these as JSON text because they are lists or tuples
+JSON_COLUMNS = ["pattern_offset", "rotation", "light_location", "camera_shift", "bg_colour", "patches"]
+TEXT_COLUMNS = ["path", "grade", "defect_type", "randomisation", "bg_type", "bg_pattern"]
+
+
+def row_to_params(row):
+    # Blender's Python has no pandas, so labels.csv is read with csv and converted here
+    params = dict(DEFAULT_PARAMS)
+    for key, text in row.items():
+        if key in JSON_COLUMNS:
+            params[key] = json.loads(text)
+        elif key in TEXT_COLUMNS:
+            params[key] = text
+        else:
+            params[key] = float(text)
+    return params
+
+
 def parse_args():
     # Blender passes its own arguments first; ours come after "--"
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default="data/synthetic/step2_1_fresh.jpg")
+    parser.add_argument("--labels", help="labels.csv from src/make_scene_params.py")
+    parser.add_argument("--start", type=int, default=0, help="first row to render")
+    parser.add_argument("--count", type=int, default=500, help="rows per run; one Blender process per chunk")
+    parser.add_argument("--out", default="data/synthetic/step2_1_fresh.jpg", help="output when --labels is not given")
     return parser.parse_args(argv)
 
 
 def main():
     args = parse_args()
     scene = build_scene()
-    apply_params(scene, DEFAULT_PARAMS)
-    # Absolute path: Blender would otherwise resolve relative paths against the .blend location
-    seconds = render(scene, os.path.abspath(args.out))
-    print(f"Rendered {args.out} in {seconds:.2f} s")
+    if not args.labels:
+        apply_params(scene, DEFAULT_PARAMS)
+        # Absolute path: Blender would otherwise resolve relative paths against the .blend location
+        seconds = render(scene, os.path.abspath(args.out))
+        print(f"Rendered {args.out} in {seconds:.2f} s")
+        return
+
+    with open(args.labels) as f:
+        rows = list(csv.DictReader(f))[args.start:args.start + args.count]
+    rendered, skipped, total = 0, 0, 0.0
+    for row in rows:
+        out_path = os.path.abspath(row["path"])
+        # Skip finished images so a crashed or interrupted chunk can simply be re-run
+        if os.path.exists(out_path):
+            skipped += 1
+            continue
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        apply_params(scene, row_to_params(row))
+        total += render(scene, out_path)
+        rendered += 1
+    mean = total / rendered if rendered else 0.0
+    print(f"Rows {args.start}-{args.start + len(rows) - 1}: rendered {rendered}, skipped {skipped}, "
+          f"mean {mean:.2f} s per image")
 
 
 if __name__ == "__main__":
