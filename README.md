@@ -8,7 +8,7 @@ Fruit-grading cameras normally need thousands of hand-labelled photos. This proj
 
 ## Results
 
-Every number here comes from a logged run in `results/experiments.csv` (summary in `results/stage3_summary.csv`). Accuracy is on the real test set: 1,350 images, 450 per grade, so accuracy equals balanced accuracy. Where a setting has 3 seeds (42, 43, 44) the table gives the mean and the min to max range.
+Every number here comes from a logged run: test results in `results/experiments.csv` (summary in `results/stage3_summary.csv`), per-epoch train and val numbers in `results/<run_id>_history.csv`. Accuracy is on the real test set: 1,350 images, 450 per grade, so accuracy equals balanced accuracy. Where a setting has 3 seeds (42, 43, 44) the table gives the mean and the min to max range.
 
 | Trained on | Real test acc |
 |---|---|
@@ -28,9 +28,9 @@ The same fruit appears in real train and real test, so every number that uses re
 
 - **The sim-to-real gap is large.** Synthetic-only wide scores 0.4207, 57.8 points below the upper bound and close to chance (0.33).
 - **Synthetic-only models call almost everything defective.** Across the 6 runs they get every real defective orange right but only 3 to 52% of fresh and 0 to 18% of green, predicting defective for 1,036 to 1,336 of 1,350 images. My reading: synthetic fresh and green fruit are smooth uniform spheres, so the model learned that any colour or texture variation means defective, and real healthy fruit has pores, marks, stems and leaves.
-- **Synthetic val is no guide to real performance.** Synthetic val reached 0.996 to 1.0 in every run while real test stayed between 0.34 and 0.57. In wide seeds 42 and 44, real val fell from 0.53 and 0.67 at the end of head-only training to 0.34 and 0.35 after full fine-tuning.
+- **Synthetic val is no guide to real performance.** Synthetic val reached 0.996 to 1.0 in every run while real test stayed between 0.34 and 0.57. In wide seeds 42 and 44, real val fell from 0.53 and 0.67 at the end of head-only training to 0.34 and 0.35 after full fine-tuning (`results/synth_*_history.csv`).
 - **Narrow vs wide: no clear difference.** Narrow is 4.6 points ahead, but the bar set before the runs was 2x the larger seed range (44.4 points). Wide seeds ranged from 0.34 to 0.57, so a single seed could have supported either conclusion.
-- **Real images closed the gap, synthetic pretraining did not add to it.** 315 real images reach 0.97. Starting from the synthetic model instead of ImageNet made no clear difference at 5%, 10% or 25% (all within the 2-point bar). Fine-tuning also erased the synthetic skill: synthetic val fell from 0.96 to 0.62 in the 5% seed 42 run.
+- **Real images closed the gap, synthetic pretraining did not add to it.** 315 real images reach 0.97. Starting from the synthetic model instead of ImageNet made no clear difference at 5%, 10% or 25% (all within the 2-point bar). Fine-tuning also erased the synthetic skill: synthetic val fell from 0.96 to 0.62 in the 5% seed 42 run (`results/mixed_wide_5_s42_history.csv`).
 - **Attention stays on the fruit.** In `results/gradcam_compare.png` (7 real val images, 4 models), all heatmaps sit on the fruit, none on the background. On fresh fruit with leaves, the synthetic models put weight on the stem and leaf and call it defective.
 
 Hypotheses were written in `docs/spec_sim2real.md` before any run. H1 (synthetic-only well above chance with a clear gap, green the easiest grade) was mostly not supported: only the clear gap held, while accuracy was close to chance and green was the worst grade, not the easiest. H2 (wide beats narrow) and H4 (synthetic pretraining helps most with little real data) were not supported. H3 (defect types differ) could not be tested, since all defect types scored 1.0 by being called defective. H5 held on the 7 images checked: attention is on the fruit as predicted, with more weight on stems, leaves and shaded regions than the real model.

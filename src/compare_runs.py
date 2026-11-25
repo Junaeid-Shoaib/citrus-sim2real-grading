@@ -5,6 +5,7 @@ Reads experiments.csv and the saved test predictions CSVs, never the test images
 comparison uses real val images only, so the test set is still read only by evaluate.py.
 """
 
+import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -18,6 +19,7 @@ from model import build_model, get_device
 
 RESULTS = Path("results")
 UPPER_BOUND_RUN = "real_lrb1e-4"
+STAGE3_RUN_PATTERN = r"(synth_(wide|narrow)|real_\d+|mixed_wide_\d+)_s\d+"
 CEILING = 0.97  # above this, differences come down to a handful of images, so report error counts
 # Columns of the Grad-CAM comparison, fixed in the spec (S7) before any 3.3 result
 GRADCAM_RUNS = ["real_lrb1e-4", "synth_narrow_s42", "synth_wide_s42", "mixed_wide_5_s42"]
@@ -131,8 +133,13 @@ def save_gradcam_compare(images, device, out_path):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42, help="draws the Grad-CAM comparison images")
+    args = parser.parse_args()
+
     runs = pd.read_csv(RESULTS / "experiments.csv")
-    runs = runs[runs["run_id"].str.match(r"(synth|real|mixed)_")]
+    # Only the Stage 3 arms plus the upper bound, so a stray Stage 1 trial cannot add a row or crash the script
+    runs = runs[runs["run_id"].str.fullmatch(STAGE3_RUN_PATTERN) | (runs["run_id"] == UPPER_BOUND_RUN)]
     table = summary_table(runs)
     table.to_csv(RESULTS / "stage3_summary.csv", index=False)
     print(table[["run_id", "test_acc", "errors", "gap"]].to_string(index=False))
@@ -149,8 +156,8 @@ def main():
     plot_real_fraction(table, RESULTS / "real_fraction.png")
     print(f"\nSaved {RESULTS / 'stage3_summary.csv'} and {RESULTS / 'real_fraction.png'}")
 
-    images = pick_gradcam_images("data/real/splits/val.csv", seed=42)
-    print("\nGrad-CAM comparison images (real val, S7 rule, seed 42):")
+    images = pick_gradcam_images("data/real/splits/val.csv", seed=args.seed)
+    print(f"\nGrad-CAM comparison images (real val, S7 rule, seed {args.seed}):")
     print(images[["path", "source_class"]].to_string(index=False))
     save_gradcam_compare(images, get_device(), RESULTS / "gradcam_compare.png")
     print(f"Saved {RESULTS / 'gradcam_compare.png'}")

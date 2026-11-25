@@ -95,6 +95,11 @@ def main():
     logged = pd.read_csv(EXPERIMENTS_CSV)
     if run_id in logged["run_id"].astype(str).values:
         raise SystemExit(f"{run_id} is already in {EXPERIMENTS_CSV}; the test set is evaluated once per run.")
+    # Read before scoring: a missing key must fail before the test set is seen, not between scoring and
+    # logging, where the guard above would not stop a second look. Stage 1 checkpoints use the older key name
+    val_acc = checkpoint.get("val_acc", checkpoint.get("best_val_acc"))
+    if val_acc is None:
+        raise SystemExit(f"{args.checkpoint} has no val_acc; the test set was not scored.")
 
     device = get_device()
     print(f"Device: {device}")
@@ -118,8 +123,7 @@ def main():
         "lr": f"{run['lr_a']:g}/{run['lr_b']:g}",
         "epochs": f"{run['epochs_a']}+{run['epochs_b']}",
         "seed": run["seed"],
-        # Stage 1 checkpoints saved it under the older key name
-        "val_acc": round(checkpoint.get("val_acc", checkpoint.get("best_val_acc")), 4),
+        "val_acc": round(val_acc, 4),
         "test_acc": round(test_acc, 4),
         "notes": args.notes,
     }

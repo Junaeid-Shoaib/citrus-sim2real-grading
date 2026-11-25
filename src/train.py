@@ -102,6 +102,9 @@ def main():
         parser.error(f"--synthetic-dir is needed for --train-source {args.train_source}")
     if args.train_source == "mixed" and not (args.real_fraction and args.init_checkpoint):
         parser.error("--train-source mixed needs --real-fraction and --init-checkpoint")
+    if args.init_checkpoint and args.train_source != "mixed":
+        # Otherwise a run started from synthetic weights would be logged as plain real or synthetic
+        parser.error("--init-checkpoint only applies to --train-source mixed")
     if args.train_source == "synthetic" and args.real_fraction:
         parser.error("--real-fraction does not apply to --train-source synthetic")
 
@@ -175,7 +178,8 @@ def main():
 
     plot_path = Path("results") / f"{args.run_id}_curves.png"
     plot_history(history, args.epochs_a, watch_name, plot_path)
-    print(f"Saved epoch {best_epoch} (val acc {best_val_acc:.4f}) to {checkpoint_path}")
+    # Print the value stored in the checkpoint, which is what evaluate.py logs as val_acc
+    print(f"Saved epoch {best_epoch} (real val acc {logged_val_acc:.4f}) to {checkpoint_path}")
     print(f"Saved {plot_path}")
 
 

@@ -1,0 +1,11 @@
+epoch,phase,train_loss,train_acc,val_set,val_loss,val_acc,watch_set,watch_loss,watch_acc
+1,A,0.2289,0.9522,synthetic val,0.0458,0.9889,real val,1.2622,0.4341
+2,A,0.0514,0.9937,synthetic val,0.0252,0.9933,real val,1.5478,0.4170
+3,A,0.0284,0.9965,synthetic val,0.0140,0.9978,real val,2.1727,0.3570
+4,A,0.0221,0.9957,synthetic val,0.0130,0.9978,real val,2.0920,0.3711
+5,A,0.0209,0.9965,synthetic val,0.0088,0.9978,real val,2.6548,0.3467
+6,B,0.0127,0.9969,synthetic val,0.0001,1.0000,real val,2.9092,0.6059
+7,B,0.0049,0.9988,synthetic val,0.0000,1.0000,real val,2.0108,0.7281
+8,B,0.0003,1.0000,synthetic val,0.0000,1.0000,real val,2.7535,0.6926
+9,B,0.0091,0.9980,synthetic val,0.0001,1.0000,real val,6.6642,0.5178
+10,B,0.0019,0.9996,synthetic val,0.0003,1.0000,real val,4.4300,0.5007
