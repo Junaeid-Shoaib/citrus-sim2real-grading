@@ -112,7 +112,8 @@ def main():
         "run_id": run_id,
         "date": date.today().isoformat(),
         "train_source": run["train_source"],
-        "real_fraction": {"real": 1.0, "synthetic": 0.0}[run["train_source"]],
+        # real_fraction is stored as a percent (5, 10, 25); absent means all of real train
+        "real_fraction": 0.0 if run["train_source"] == "synthetic" else (run.get("real_fraction") or 100) / 100,
         "model": "resnet18",
         "lr": f"{run['lr_a']:g}/{run['lr_b']:g}",
         "epochs": f"{run['epochs_a']}+{run['epochs_b']}",

@@ -77,7 +77,7 @@ Why sequential, not joint training (synthetic and real shuffled into one set):
 - The 3.3 plot above.
 - With 3 seeds (S5): mean and min to max per setting.
 
-**Grad-CAM comparison (S7):** one figure, `results/gradcam_compare.png`. Rows are the same fixed images, columns are Stage 1 real, synthetic narrow, synthetic wide and the best mixed run. Each cell shows the heatmap for that model's own prediction. The question it answers: do synthetic-trained models look at the fruit and its marks the way the real model does, or at edges, background or the stem? Stage 1's heatmaps sat on the fruit; a synthetic model looking at the background or the frame edge would point at a specific rendering cue.
+**Grad-CAM comparison (S7):** one figure, `results/gradcam_compare.png`. Rows are the same fixed images, columns are Stage 1 real, synthetic narrow, synthetic wide and `mixed_wide_5_s42`. The mixed column was fixed on 2026-11-25 before any 3.3 run, so it is not chosen by results: 5% is where synthetic pretraining should matter most (H4), and seed 42 matches the other columns. Each cell shows the heatmap for that model's own prediction. The question it answers: do synthetic-trained models look at the fruit and its marks the way the real model does, or at edges, background or the stem? Stage 1's heatmaps sat on the fruit; a synthetic model looking at the background or the frame edge would point at a specific rendering cue.
 
 ## 9. Hypotheses (written before any Stage 3 run)
 
