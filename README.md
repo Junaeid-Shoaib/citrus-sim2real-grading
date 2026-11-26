@@ -38,7 +38,6 @@ Hypotheses were written in `docs/spec_sim2real.md` before any run. H1 (synthetic
 ## Limitations
 
 - Blender rigid-body physics is used only for natural resting poses. It is not DEM and does not model fruit-to-fruit contact or bulk flow.
-- The sorting loop in Stage 4 is a simulation of a robot interface, not robot code.
 - The real-data baseline is an upper bound. The split groups augmented copies of the same photo together, but the dataset also contains the same physical orange photographed several times, and those photos can land in different splits. Spot checks found val images whose closest train image is clearly the same fruit. So the real baseline partly measures recognising seen fruit, and the sim-to-real gap is likely overstated. Testing on an independent orange dataset would give an honest number and is left as future work.
 - The 5%, 10% and 25% subsets come from real train, which shares fruit with real test. Real-only and mixed runs use the same subsets, so the comparison between them is fair, but both absolute numbers are optimistic.
 - The real test set is one dataset from one source: phone photos on white or grey backgrounds. Good results here would not show transfer to a grading machine's camera.
@@ -64,5 +63,61 @@ Real images: *Orange Fruit Image Dataset for Classification*, Mendeley Data, DOI
 
 ```
 uv sync
-uv run python src/<script>.py
+```
+
+Blender (current LTS) runs headless as `blender`. On a Mac, alias it to `/Applications/Blender.app/Contents/MacOS/Blender`.
+
+## Pipeline
+
+Run from the repo root, in this order. Every script uses seed 42 unless `--seed` is given.
+
+**Stage 1: real baseline.** Download the dataset to `data/real/raw/` first.
+
+```
+uv run python src/prepare_real.py          # 3 grades, duplicate groups, 70/15/15 split CSVs
+uv run python src/dataset.py               # results/sample_real.png sanity grid
+uv run python src/train.py --train-source real --run-id real_lrb1e-4
+uv run python src/evaluate.py --checkpoint checkpoints/real_lrb1e-4.pt --notes "real baseline"
+```
+
+**Stage 2: Blender generator.** Shown for wide; narrow is the same with `narrow` / `narrow_v2`.
+
+```
+uv run python src/make_scene_params.py --randomisation wide --n-per-grade 1000 --out-dir data/synthetic/wide_v2
+for start in 0 500 1000 1500 2000 2500; do
+  blender -b -P blender/generate.py -- --labels data/synthetic/wide_v2/labels.csv --start $start --count 500
+done
+uv run python src/camera_process.py --labels data/synthetic/wide_v2/labels.csv
+uv run python src/split_synthetic.py --synthetic-dir data/synthetic/wide_v2
+uv run python src/synthetic_report.py --synthetic-dir data/synthetic/wide_v2
+```
+
+**Stage 3: sim-to-real.** Training output is saved to `logs/<run_id>.log` for `parse_logs.py`. Each run is evaluated once.
+
+```
+mkdir -p logs
+
+# 3.1 and 3.2: synthetic only, narrow and wide, seeds 42 to 44
+for setting in wide narrow; do for seed in 42 43 44; do
+  uv run python src/train.py --train-source synthetic --synthetic-dir data/synthetic/${setting}_v2 \
+    --seed $seed --run-id synth_${setting}_s${seed} | tee logs/synth_${setting}_s${seed}.log
+  uv run python src/evaluate.py --checkpoint checkpoints/synth_${setting}_s${seed}.pt
+done; done
+
+# 3.3: nested 5/10/25% real subsets, then real-only and mixed runs on the same subset
+uv run python src/make_real_subsets.py
+for run in 5:42 5:43 5:44 10:42 25:42; do
+  pct=${run%%:*}; seed=${run##*:}
+  uv run python src/train.py --train-source real --real-fraction $pct --seed $seed \
+    --run-id real_${pct}_s${seed} | tee logs/real_${pct}_s${seed}.log
+  uv run python src/evaluate.py --checkpoint checkpoints/real_${pct}_s${seed}.pt
+  uv run python src/train.py --train-source mixed --real-fraction $pct --seed $seed \
+    --synthetic-dir data/synthetic/wide_v2 --init-checkpoint checkpoints/synth_wide_s${seed}.pt \
+    --run-id mixed_wide_${pct}_s${seed} | tee logs/mixed_wide_${pct}_s${seed}.log
+  uv run python src/evaluate.py --checkpoint checkpoints/mixed_wide_${pct}_s${seed}.pt
+done
+
+# 3.4: summary table, real-fraction plot, difference rule, Grad-CAM comparison, per-epoch history
+uv run python src/compare_runs.py
+uv run python src/parse_logs.py
 ```
